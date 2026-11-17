@@ -4,7 +4,7 @@ A short map for contributors and AI coding assistants.
 
 ## Run and test
 
-- Run: `python -m studio.server` (settings from `.env`; see `.env.example`). Needs Python 3.10+ and `ffmpeg`.
+- Run: `python -m studio.server` (settings from `.env`; see `.env.example`). Needs a Python that has ready-made files for every pinned package (`python tools/pyenv.py check` says which versions; 3.14 does not work yet) and `ffmpeg`. `python tools/pyenv.py ensure` builds `.venv` with the right one.
 - Speech model, once: `python -m studio.fetch_model`.
 - Tests: `python tests/run.py`. It starts a throwaway copy on a spare port with an empty data folder. Run it
   before and after any change to `studio/`. No keys needed.
@@ -19,6 +19,12 @@ A short map for contributors and AI coding assistants.
 | `studio/config.py` | Every setting, read from environment variables |
 | `studio/ai.py` | The only code that talks to an AI service, and the AI settings saved from the dashboard (`ai.json` in the data folder) |
 | `studio/brain.py` | The prompts: finding clips, live judging, hooks and titles, caption fixes |
+| `studio/branding.py` | The app's name, repository, copyright line, data folder name and setting prefix, in one place (for the later rename) |
+| `studio/bootstrap.py`, `studio/pins.json` | Puts `bin/` first on the PATH; fetches ffmpeg and Deno only when missing, from pinned, hash-checked downloads |
+| `studio/pool.py`, `studio/ledger.py`, `studio/providers.default.json` | The free AI pool: failover, cooldowns, privacy filter, repair retry. The ledger is a small SQLite file in `data/` |
+| `studio/jsoncheck.py` | Checks an AI answer against its schema and keeps only the usable items |
+| `tools/pyenv.py`, `tools/baseline.py`, `tools/find-python.bat` | Find or install a Python that fits, build `.venv`, run the whole test suite and save the log (`windows-baseline.bat`). No version is written down: it is computed from PyPI |
+| `tools/claude_pack.py`, `tools/sandbox.json` | Packs files into zips under 30 MB and joins them again (for working with an offline assistant) |
 | `studio/usage.py` | The record of AI calls and tokens shown on the AI usage page |
 | `studio/jobs.py` | The video pipeline and the fair queue |
 | `studio/live.py` | Live recording and clipping |
@@ -38,6 +44,9 @@ A short map for contributors and AI coding assistants.
 - **Anything that changes what a user sees must call `ctx.bump()`**. The page polls `/api/sync`, which answers
   from memory when that user's counter has not moved.
 - **Text from videos is untrusted**: it goes into prompts through `brain._safe` and out through `brain._text`.
+- **The free pool** (`PEAKCUT_AI_PROVIDER=pool`): add a service by adding an entry to `studio/providers.default.json` (it needs a
+  data-terms source URL and a check date, or strict privacy excludes it). `pool.complete_json` raises `PoolExhausted` when nothing can
+  answer; `brain.find_clips` then picks clips by loudness. Its message must never contain "HTTP 429" or "HTTP 5".
 - **Adding an AI provider**: add a row to `PROVIDERS` in `studio/ai.py`. If it speaks the OpenAI chat format that
   is all; otherwise add one function that returns `(parsed JSON, tokens in, tokens out)`.
 - **Clips are rendered in a short temporary folder** and moved into place (`render.render_clip`): ffmpeg's caption

@@ -5,6 +5,8 @@ import os
 import re
 from pathlib import Path
 
+from . import branding
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -52,7 +54,7 @@ def _read_secret(var: str, file_var: str, pattern: str) -> str:
 
 
 # ---------------------------------------------------------------- where things live
-DATA_DIR = Path(env("PEAKCUT_DATA") or ROOT / "data")
+DATA_DIR = Path(env("PEAKCUT_DATA") or ROOT / branding.DATA_DIR_NAME)
 USERS_DIR = DATA_DIR / "users"          # users/<user id>/{creators,jobs,accounts}
 MODELS_DIR = Path(env("PEAKCUT_MODELS") or DATA_DIR / "models")
 TMP_DIR = DATA_DIR / "tmp"
@@ -67,6 +69,11 @@ DATABASE_URL = env("DATABASE_URL") or f"sqlite:///{(DATA_DIR / 'peakcut.db').as_
 
 for d in (USERS_DIR, MODELS_DIR, TMP_DIR, FONTS_DIR):
     d.mkdir(parents=True, exist_ok=True)
+
+# The folder with ffmpeg, ffprobe and Deno goes first on the PATH, once, so every place that runs them by name finds
+# these copies (studio/bootstrap.py). Nothing is downloaded here.
+from . import bootstrap  # noqa: E402
+BIN_DIR = bootstrap.use_bin_dir()
 
 
 def user_dir(uid: str) -> Path:
@@ -86,9 +93,10 @@ SESSION_DAYS = int(env("PEAKCUT_SESSION_DAYS", "30"))
 # and signs in, and each person only sees their own videos.
 ACCOUNTS = env("PEAKCUT_ACCOUNTS", "0") == "1"
 # The two buttons along the top of the dashboard: the project's code, and where to follow its maker (feedback goes
-# there too). Set either to an empty value to hide that button, or point them at your own pages in a fork.
-REPO_URL = env("PEAKCUT_REPO_URL", "https://github.com/haziqahmedqasmi/peakcut").strip()
-FOLLOW_URL = env("PEAKCUT_FOLLOW_URL", "https://www.instagram.com/haziq.builds/").strip()
+# there too). Set either to an empty value to hide that button. The code button points at this fork; the follow
+# button is empty (hidden) until the owner sets one.
+REPO_URL = env("PEAKCUT_REPO_URL", branding.REPO_URL).strip()
+FOLLOW_URL = env("PEAKCUT_FOLLOW_URL", "").strip()
 
 # ---------------------------------------------------------------- limits (per user, and for the whole server)
 # Your own PeakCut has no limits unless you set them: 0 (the default) means "none" for every limit below. The

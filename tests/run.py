@@ -19,6 +19,8 @@ BASE = f"http://127.0.0.1:{PORT}"
 
 
 def main() -> int:
+    if sys.version_info >= (3, 14):
+        print("NOTE: this Python is very new; some pinned packages may have no ready-made file for it. Run tools/pyenv.py check (or tools\\windows-baseline.bat) to see which Python versions fit and to set one up.")
     data = Path(tempfile.mkdtemp(prefix="peakcut-test-"))
     env = {**os.environ, "PEAKCUT_DATA": str(data), "PEAKCUT_PORT": str(PORT), "PEAKCUT_PUBLIC_URL": BASE,
            "PEAKCUT_HOST": "127.0.0.1", "PEAKCUT_AUTO_RELOAD": "0", "DATABASE_URL": "",
@@ -26,7 +28,7 @@ def main() -> int:
            # nothing outside this machine is contacted: no AI, no email, no Google sign-in
            "PEAKCUT_SMTP_HOST": "", "PEAKCUT_VERIFY_EMAIL": "1",   # the tests cover the confirm-your-email rule
            "GOOGLE_CLIENT_ID": "", "GOOGLE_CLIENT_SECRET": "", "GOOGLE_CLIENT_FILE": "", "PYTHONUNBUFFERED": "1",
-           "PEAKCUT_AI_KEY": "", "PEAKCUT_AI_KEY_FILE": "", "PEAKCUT_AI_MODELS": "",
+           "PEAKCUT_BOOTSTRAP": "0", "PEAKCUT_AI_KEY": "", "PEAKCUT_AI_KEY_FILE": "", "PEAKCUT_AI_MODELS": "",
            "PEAKCUT_UPLOAD_PART_MB": "5", "PEAKCUT_MAX_UPLOAD_MB": "64"}
     log = data / "server.log"
     failed = []
@@ -55,7 +57,12 @@ def main() -> int:
                 ("Hindi and Urdu captions in Roman letters", ["tests/test_roman.py"]),
                 ("connecting YouTube, Instagram and TikTok", ["tests/test_connect.py"]),
                 ("the new-version notice", ["tests/test_updates.py"]),
-                ("no limits by default", ["tests/test_limits.py"])]
+                ("no limits by default", ["tests/test_limits.py"]),
+                ("fetching ffmpeg and Deno (pinned, resumable, offline-safe)", ["tests/test_bootstrap.py"]),
+                ("the free AI pool: failover, cooldowns, privacy, repair, loudness-only end", ["tests/test_pool.py"]),
+                ("the pack tool (split into small zips, join and check)", ["tests/test_claude_pack.py"]),
+                ("finding a Python that fits and building the virtual environment", ["tests/test_pyenv.py"]),
+                ("the fork's licence, names, version file and update source", ["tests/test_fork.py"])]
         for name, args in runs:
             print(f"\n=== {name} ===", flush=True)
             r = subprocess.run([sys.executable, *args], cwd=ROOT, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")

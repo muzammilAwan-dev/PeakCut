@@ -1,4 +1,4 @@
-"""The "new version" notice: the version here is read from .git, GitHub is asked what is newer (a stand-in here,
+"""The "new version" notice: the version here is read from .git (or a VERSION file), GitHub is asked what is newer (a stand-in here,
 so nothing leaves this machine), and only the owner is told."""
 import json, os, sys, tempfile
 from pathlib import Path
@@ -6,7 +6,8 @@ os.environ["PEAKCUT_DATA"] = tempfile.mkdtemp(prefix="pc-upd-")
 os.environ.update(DATABASE_URL="", PEAKCUT_ACCOUNTS="0", PEAKCUT_PUBLIC_URL="http://127.0.0.1:8765", PEAKCUT_AI_KEY="", PEAKCUT_AI_MODELS="")
 sys.path.insert(0, ".")
 from fastapi.testclient import TestClient
-from studio import config, db, server, updates
+from studio import branding, config, db, server, updates
+branding_name = branding.APP_NAME
 db.init()
 fails = []
 def check(n, got, want=True):
@@ -28,7 +29,9 @@ check("...also when git has packed it away", updates.current(), "b" * 40)
 (fake / ".git" / "HEAD").write_text("c" * 40 + "\n")
 check("...and on a single commit", updates.current(), "c" * 40)
 config.ROOT = real_root
-check("this folder's own version is found", len(updates.current()), 40)
+# a zip has no .git: its VERSION file carries the commit it was built from (details: tests/test_fork.py)
+check("this folder's version is a commit id, or unknown", len(updates.current()) in (0, 40))
+updates.current = lambda: "e" * 40            # from here on the version is fixed, so this test never needs .git
 
 # ---- asking GitHub
 class R:
@@ -51,7 +54,7 @@ check("two newer commits are found", (got["behind"], got["latest"], got["current
 check("newest change first, one line each, with its date", [(n["title"], n["date"]) for n in got["notes"]],
       [("Captions always in English", "2026-11-16"), ("Connect TikTok in one click", "2026-11-15")])
 check("GitHub is asked for exactly this commit against the branch", asked[-1][0], f"https://api.github.com/repos/{updates.REPO}/compare/{here}...main")
-check("nothing about this server is sent", set(asked[-1][1]) <= {"Accept", "User-Agent"} and "PeakCut" in asked[-1][1]["User-Agent"])
+check("nothing about this server is sent", set(asked[-1][1]) <= {"Accept", "User-Agent"} and branding_name in asked[-1][1]["User-Agent"])
 asked.clear()
 check("the answer is kept: GitHub is not asked again for hours", (updates.check(), len(asked)), (got, 0))
 answer["now"] = R(200, {"ahead_by": 0, "commits": []})

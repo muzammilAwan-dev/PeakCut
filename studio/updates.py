@@ -1,10 +1,11 @@
 """Is there a newer PeakCut? Compares the version running here with the latest on GitHub.
 
-The version here is the git commit this folder is on (read straight from .git, no git program needed). Every few
+The version here is the git commit this folder is on (read straight from .git, no git program needed). A copy
+without .git (a downloaded zip) carries a file named VERSION beside the app with the commit it was built from. Every few
 hours PeakCut asks GitHub's public API what has been added since; nothing about this server or its users is sent,
 only the two commit ids. The owner then sees a notice in the dashboard with what changed and how to update.
 
-    PEAKCUT_UPDATE_REPO     where to look (default: the project's own repository; a fork points at itself)
+    PEAKCUT_UPDATE_REPO     where to look (default: this fork's repository, see branding.py)
     PEAKCUT_UPDATE_BRANCH   which branch (default: main)
     PEAKCUT_UPDATE_CHECK=0  never look"""
 import re
@@ -13,9 +14,9 @@ import time
 
 import httpx
 
-from . import config
+from . import branding, config
 
-REPO = (config.env("PEAKCUT_UPDATE_REPO") or "haziqahmedqasmi/peakcut").strip().strip("/")
+REPO = (config.env("PEAKCUT_UPDATE_REPO") or branding.REPO).strip().strip("/")
 BRANCH = (config.env("PEAKCUT_UPDATE_BRANCH") or "main").strip()
 ON = config.env("PEAKCUT_UPDATE_CHECK", "1") != "0" and bool(re.fullmatch(r"[\w.\-]+/[\w.\-]+", REPO))
 EVERY = 6 * 3600
@@ -23,8 +24,24 @@ _state = {"checked": 0.0, "result": None}
 _lock = threading.Lock()
 
 
+def _version_file() -> str:
+    """The commit written into the VERSION file by the build, or "" when there is none or it is not a commit id.
+    The file is only believed when it is exactly a 40-letter commit id: anything else is ignored."""
+    try:
+        text = (config.ROOT / "VERSION").read_text(encoding="utf-8").strip().splitlines()
+    except (OSError, UnicodeError):
+        return ""
+    first = text[0].strip().lower() if text else ""
+    return first if re.fullmatch(r"[0-9a-f]{40}", first) else ""
+
+
 def current() -> str:
-    """The commit this copy is on, or "" when it was not installed with git (a downloaded zip, for example)."""
+    """The commit this copy is on: from .git when there is one, else from the VERSION file, else "" (unknown)."""
+    return _git_commit() or _version_file()
+
+
+def _git_commit() -> str:
+    """The commit this copy is on according to .git, or "" when it was not installed with git."""
     g = config.ROOT / ".git"
     try:
         if g.is_file():                      # a worktree or submodule: .git points somewhere else
@@ -49,7 +66,7 @@ def current() -> str:
 
 def _ask_github(here: str):
     r = httpx.get(f"https://api.github.com/repos/{REPO}/compare/{here}...{BRANCH}", timeout=20,
-                  headers={"Accept": "application/vnd.github+json", "User-Agent": "PeakCut-update-check"})
+                  headers={"Accept": "application/vnd.github+json", "User-Agent": f"{branding.APP_NAME}-update-check"})
     if r.status_code != 200:
         return None                         # not public yet, a commit GitHub doesn't know, or too many checks
     d = r.json()

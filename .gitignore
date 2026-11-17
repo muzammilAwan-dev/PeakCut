@@ -8,6 +8,7 @@ secrets/
 *service-account*.json
 *client_secret*.json
 data/
+bin/
 *.db
 *.db-wal
 *.db-shm
@@ -20,6 +21,7 @@ CLAUDE.local.md
 .vscode/
 .idea/
 *.bat
+!installer/*.bat
 Thumbs.db
 .DS_Store
 
@@ -29,3 +31,6 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+claude-pack/
+unpacked/
+baseline-windows.txt

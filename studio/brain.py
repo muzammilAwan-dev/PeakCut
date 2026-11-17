@@ -7,7 +7,7 @@ import time
 
 import numpy as np
 
-from . import ai, config, usage, roman
+from . import ai, config, jsoncheck, usage, roman
 
 WINDOW_SEC, OVERLAP_SEC = 15 * 60, 60
 
@@ -174,7 +174,10 @@ def ask_ai(prompt, schema=None, purpose="AI call"):
             try:
                 out, sent, wrote = ai.call(model, prompt, schema or SCHEMA)
                 usage.record(sent, wrote, purpose)
-                return out, model, sent + wrote
+                # keep only the usable part of the answer: one bad item no longer loses the whole window (audit D7).
+                # An answer that is wrong as a whole raises, and the next model is tried.
+                out, _dropped = jsoncheck.clean(out, schema or SCHEMA)
+                return out, ai.route(model), sent + wrote
             except Exception as e:  # noqa: BLE001
                 last = e
                 if "HTTP 429" in str(e) or "HTTP 5" in str(e):

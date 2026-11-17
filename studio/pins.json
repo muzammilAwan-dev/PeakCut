@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "note": "Exact download addresses and SHA-256 fingerprints for the programs PeakCut fetches. A program with no sha256 is never downloaded. Fill these on a machine with internet: python tools/make_pins.py (see docs/STATUS.md).",
+  "tools": {
+    "ffmpeg": {
+      "version": "",
+      "platforms": {
+        "win64": {
+          "url": "",
+          "sha256": "",
+          "size": 0,
+          "archive": "zip",
+          "files": {"ffmpeg.exe": "bin/ffmpeg.exe", "ffprobe.exe": "bin/ffprobe.exe"}
+        }
+      }
+    },
+    "deno": {
+      "version": "",
+      "platforms": {
+        "win64": {
+          "url": "",
+          "sha256": "",
+          "size": 0,
+          "archive": "zip",
+          "files": {"deno.exe": "deno.exe"}
+        }
+      }
+    }
+  }
+}

@@ -54,6 +54,8 @@ def _startup():
         except OSError:
             pass
     render.install_fonts()
+    from . import bootstrap
+    bootstrap.start_background()          # fetches ffmpeg and Deno in the background if they are missing; never blocks
     jobs.start()
     live.start()
     posting.start()

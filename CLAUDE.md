@@ -45,6 +45,6 @@ It is later rebranded as the owner's own product (company: Amfaiz).
 Concise replies. Lists and tables. At most 3 questions at a time, and only if blocked.
 
 ## Windows notes
-- Dev machine: Windows 10 Enterprise LTSC, Git Bash, 16 GB RAM, about 20 Mbps internet. Python is **not confirmed** installed: check `python --version` (needs 3.10+) and ask if missing.
+- Dev machine: Windows 10 Enterprise LTSC, Git Bash, 16 GB RAM, about 20 Mbps internet. Python version is computed, not assumed: `python tools/pyenv.py check` (3.13 verified for every pinned package; 3.14 failed because numpy 2.2.6 has no wheel). `tools\windows-baseline.bat` finds or installs a fitting one.
 - 16 GB is the "high" tier. Do not claim mid-tier (8 GB) behaviour without measuring it: limit with `PEAKCUT_JOB_WORKERS=1`, `PEAKCUT_MAX_LIVE=1` and record peak RAM.
 - Big downloads (ffmpeg about 163 MiB, models) must show progress, resume or retry, and verify SHA-256.

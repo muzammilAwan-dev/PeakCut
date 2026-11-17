@@ -1,7 +1,8 @@
 """Talking to the AI service. You bring your own key, and choose the service and model in the dashboard
 (Settings, AI) or in .env. What is saved from the dashboard is kept in ai.json in the data folder and wins.
 
-    PEAKCUT_AI_PROVIDER   gemini | openai | xai | groq | openrouter | anthropic | ollama | custom
+    PEAKCUT_AI_PROVIDER   pool | gemini | openai | xai | groq | openrouter | anthropic | ollama | custom
+                          ("pool" asks several free services in turn: see studio/pool.py)
     PEAKCUT_AI_MODELS     one or more model ids, comma separated, tried in this order
     PEAKCUT_AI_KEY        your key (or PEAKCUT_AI_KEY_FILE, a file holding it)
     PEAKCUT_AI_BASE_URL   only for "custom" (any service that speaks the OpenAI chat format), or to override
@@ -27,9 +28,10 @@ PROVIDERS = {
     "anthropic": ("Claude", "https://api.anthropic.com/v1", "anthropic", "https://console.anthropic.com", ""),
     "ollama": ("Ollama (on this machine)", "http://127.0.0.1:11434/v1", "openai", "https://ollama.com", "llama3.1"),
     "custom": ("Custom (OpenAI-compatible)", "", "openai", "", ""),
+    "pool": ("Free AI pool", "", "pool", "", "auto"),            # several free services in turn; keys live in studio/pool.py's settings
 }
 ALIASES = {"google": "gemini", "grok": "xai", "claude": "anthropic", "local": "ollama"}
-NO_KEY = {"ollama", "custom"}       # a model running on your own machine needs no key
+NO_KEY = {"ollama", "custom", "pool"}       # a model running on your own machine needs no key; the pool keeps its own keys
 
 # ---------------------------------------------------------------- the settings in use
 _lock = threading.Lock()
@@ -71,6 +73,8 @@ def provider() -> str:
 
 
 def models() -> list:
+    if provider() == "pool":
+        return ["auto"]                  # the pool picks the model itself
     return current()["models"]
 
 
@@ -89,6 +93,9 @@ def base_url() -> str:
 
 def ready() -> bool:
     c = current()
+    if c["provider"] == "pool":
+        from . import pool
+        return pool.ready()
     return bool(c["provider"] in PROVIDERS and c["models"] and base_url() and (c["key"] or c["provider"] in NO_KEY))
 
 
@@ -112,6 +119,8 @@ def save(provider_id: str, model_ids, address: str = "", new_key=None) -> dict:
     if isinstance(model_ids, str):
         model_ids = model_ids.split(",")
     ms = [str(m).strip()[:120] for m in (model_ids or []) if str(m).strip()][:5]
+    if p == "pool":
+        ms = ["auto"]
     if not ms:
         raise ValueError("Enter the model to use.")
     if any(not re.fullmatch(r"[\w.\-:/@]+", m) for m in ms):
@@ -144,6 +153,8 @@ def list_models(provider_id=None, address=None, with_key=None) -> list:
     p = ALIASES.get(str(provider_id or c["provider"]).lower(), str(provider_id or c["provider"]).lower())
     if p not in PROVIDERS:
         raise ValueError("Choose one of the AI services in the list.")
+    if p == "pool":
+        return ["auto"]
     k = str(with_key or "").strip() or (c["key"] if c["provider"] == p else "")
     base = str(address or "").strip().rstrip("/") or (c["base_url"] if c["provider"] == p else "") or PROVIDERS[p][1]
     if not base:
@@ -219,7 +230,19 @@ def _parse(text):
 def call(model: str, prompt: str, schema: dict):
     """Ask one model. Returns (the parsed JSON answer, tokens sent, tokens written back)."""
     how = PROVIDERS[provider()][2]
+    if how == "pool":
+        from . import pool
+        return pool.complete_json(prompt, schema)       # raises pool.PoolExhausted when no free service can answer
     return {"gemini": _gemini, "openai": _openai, "anthropic": _anthropic}[how](model, prompt, schema)
+
+
+def route(model: str) -> str:
+    """Which service and model really answered, for the usage notes: "groq/openai/gpt-oss-120b" for the pool,
+    otherwise just the model asked."""
+    if provider() == "pool":
+        from . import pool
+        return pool.route() or model
+    return model
 
 
 def _gemini(model, prompt, schema):

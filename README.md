@@ -7,6 +7,10 @@ Paste a YouTube, Twitch or Kick link (or upload a file) and PeakCut finds the mo
 9:16, adds word-by-word captions and a hook, and can post them to your connected accounts. It can also record a
 creator's live stream and clip the highlights while the stream is still running.
 
+> **About this fork.** This is Amfaiz's fork of PeakCut (MIT). It is being turned into a portable Windows app:
+> unzip, run, and make clips with a free AI provider pool. The original licence notice stays in [LICENSE](LICENSE).
+> Progress and what is next: [docs/STATUS.md](docs/STATUS.md).
+
 ## What it does
 
 - **Clips from any video.** Transcribes the audio, asks an AI which moments would hold a stranger's attention, and
@@ -23,7 +27,7 @@ creator's live stream and clip the highlights while the stream is still running.
 
 ## Quick start
 
-You need Python 3.10 or newer and `ffmpeg` on your PATH.
+You need a recent Python (3.10 to 3.13 today; `python tools/pyenv.py check` tells you which versions fit and `python tools/pyenv.py ensure` sets one up) and `ffmpeg` on your PATH.
 
 ```bash
 git clone <this repository> peakcut

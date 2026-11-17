@@ -1,0 +1,5 @@
+{
+  "_note": "What the assistant's offline sandbox runs. Check there with: python3 --version  and  uname -m. Used by claude_pack.py to download matching Linux packages. Change it here; no code edit needed.",
+  "python": "3.13",
+  "platforms": ["manylinux2014_x86_64", "manylinux_2_17_x86_64", "manylinux_2_28_x86_64", "manylinux_2_34_x86_64", "manylinux_2_39_x86_64"]
+}
