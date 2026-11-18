@@ -139,19 +139,17 @@ def join(parts_dir, dest: Path, name=None) -> Path:
     if missing:
         raise ValueError(f"missing part(s) {missing} of {m['parts']}")
     h = hashlib.sha256()
+    for i in range(m["parts"]):                       # check every part before writing anything
+        if sha256_bytes(g["parts"][i]) != m["chunk_sha256"][i]:
+            raise ValueError(f"part {i + 1} is damaged (its fingerprint does not match). Upload it again.")
+        h.update(g["parts"][i])
+    if h.hexdigest() != m["sha256"]:
+        raise ValueError("the joined file does not match the fingerprint in the manifest")
     dest.mkdir(parents=True, exist_ok=True)
     payload = dest / f"{pack_name}.payload.zip"
     with open(payload, "wb") as out:
         for i in range(m["parts"]):
-            data = g["parts"][i]
-            if sha256_bytes(data) != m["chunk_sha256"][i]:
-                payload.unlink(missing_ok=True)
-                raise ValueError(f"part {i + 1} is damaged (its fingerprint does not match). Upload it again.")
-            out.write(data)
-            h.update(data)
-    if h.hexdigest() != m["sha256"]:
-        payload.unlink(missing_ok=True)
-        raise ValueError("the joined file does not match the fingerprint in the manifest")
+            out.write(g["parts"][i])
     return payload
 
 

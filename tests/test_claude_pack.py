@@ -33,7 +33,7 @@ dest = w / "back"
 payload = cp.join([out], dest)
 names = cp.extract_safe(payload, dest / "files")
 check("joined and extracted: same files, same bytes",
-      (sorted(names), (dest / "files" / "a.bin").read_bytes() == (src / "a.bin").read_bytes()), (["a.bin", "sub/b.txt"], True))
+      (sorted(str(n).replace("\\", "/") for n in names), (dest / "files" / "a.bin").read_bytes() == (src / "a.bin").read_bytes()), (["a.bin", "sub/b.txt"], True))
 
 # a part missing
 spare = w / "spare"; spare.mkdir(); shutil.copy(parts[1], spare / parts[1].name); parts[1].unlink()
