@@ -26,18 +26,16 @@ Branch: `develop`. Last updated: 2026-11-17 (S0, S1 and the S2 backend built in 
 ## Baseline
 **First Windows attempt (2026-11-17): did not run.** The machine has Python 3.14.6; `pip install -r requirements.txt` failed on numpy 2.2.6 (no 3.14 wheel, no C compiler). Fix: `tools\windows-baseline.bat` now finds a Python that fits (or offers to install one) by itself, so just run it again. ffmpeg was found at `C:\ffmpeg\bin`.
 
-**Windows baseline (2026-11-18, Win 11, Python 3.13.17):** all test files passed except `tests/test_claude_pack.py`, which hit two Windows-only bugs: `join` deleted the payload while still open (WinError 32), and the test compared `/` with `\` paths. Both fixed 2026-11-18 (`tools/claude_pack.py`, `tests/test_claude_pack.py`); passes on Linux, **re-verify on Windows**. The log stopped at the pyenv and fork tests, so confirm they ran.
+**Windows baseline (2026-11-18, Win 11, Python 3.13.17 picked by `tools/pyenv.py`): all 16 test files pass, exit 0** (after fixing two Windows-only bugs in `tools/claude_pack.py` / its test). Only a harmless starlette warning (`httpx2`).
 
 **Sandbox, real suite (2026-11-18, Linux, Python 3.13, wheels from `claude-pack`):** `python tests/run.py` -> 16 files, 510 checks, **all passed**, no skips. This includes `tests/test_ai.py` and the server half of `tests/test_updates.py`, previously unrun. Warning only: starlette says `httpx` in `TestClient` is deprecated (prefers `httpx2`); harmless now.
 
-To record the real Windows baseline: run `tools\windows-baseline.bat` and attach `baseline-windows.txt`, or paste the output of `python tests/run.py` here.
 
 ## Open questions for the owner
 - Product name candidates for S-Brand (2 to 3).
 - Path of the extracted FuseClip reference folder (kept outside the repo).
 
 ## Known UNVERIFIED (resolve by experiment before relying on them)
-- **The whole suite on Windows** after S0 to S2 (see Baseline). Passes on Linux.
 - `studio/pins.json` is empty: ffmpeg and Deno addresses and SHA-256 values must be filled with `tools/make_pins.py` and compared with the publishers' checksum files.
 - The pool catalog (`studio/providers.default.json`): every limit, model id, context size and data-terms statement was copied from PLAN section 4.1 and not re-checked; Cloudflare's OpenAI-compatible path, model id and context size are guesses flagged inside the file.
 - A first-run on a clean Windows machine: does the background fetch finish before the first job needs ffmpeg? (`bootstrap.wait()` exists; no job calls it yet. S3.)

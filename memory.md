@@ -1,5 +1,5 @@
 # PeakCut fork: handoff (memory.md)
-Updated 2026-11-18 (rev 7). Read this first, then `docs/STATUS.md`. Code wins over this file if they disagree.
+Updated 2026-11-18 (rev 8). Read this first, then `docs/STATUS.md`. Code wins over this file if they disagree.
 **Assistant: after every reply that changes anything, send this file again, updated and compact (no history, only the current state).**
 
 ## Attach to a new chat
@@ -36,7 +36,7 @@ Owner's fork `muzammilAwan-dev/PeakCut` (company Amfaiz, rebrand later) -> porta
 - [x] S1 engine bootstrap (ffmpeg, Deno; `studio/bootstrap.py`, `pins.json`): built, 54 checks. **Pins empty.**
 - [x] S2 pool backend (`pool.py`, `ledger.py`, `jsoncheck.py`, `providers.default.json`; groq, cloudflare, ollama, gemini-off): 87 checks vs mock server
 - [x] Pack tools + flexible Python tooling (this rev): tests pass in sandbox (`test_pyenv`, `test_claude_pack`, `test_bootstrap`, `test_pool`)
-- [x] Real Windows baseline (2026-11-18, Win 11, Python 3.13.17 via pyenv logic): all pass except `test_claude_pack` (2 Windows-only bugs, FIXED rev 6, re-verify). Log ended early at pyenv/fork tests: confirm they ran. Warning: starlette wants `httpx2` later.
+- [x] Real Windows baseline (2026-11-18, Win 11, Python 3.13.17 chosen by pyenv logic): **all 16 test files pass, exit 0** (after rev 7 fix). Only a starlette `httpx2` deprecation warning.
 - [x] Real full suite in sandbox: 510 checks pass, incl. `test_ai.py` and server half of `test_updates.py`
 - [ ] S1b yt-dlp nightly + daily check + fill pins (needs internet)
 - [ ] S2b pool settings page, consent dialog, key-save capability probe
@@ -47,10 +47,10 @@ Owner's fork `muzammilAwan-dev/PeakCut` (company Amfaiz, rebrand later) -> porta
 - [ ] S7 security (key vault, LLM-output validation) -> S8 browser extension -> S-Brand -> Release (clean-VM test)
 
 ## Where we are / next
-1. Owner: copy `tools/claude_pack.py`, `tests/test_claude_pack.py`, `docs/STATUS.md`; re-run `tools\windows-baseline.bat` and send the new baseline (check pyenv + fork tests appear). Commit: `git add -A && git commit -m "S0-S2: fork hygiene, engine bootstrap, AI pool backend, flexible Python tooling" && git push origin develop`.
-2. Name chosen by owner: **ViralCut** (English only; product clips the best moments from streams into shorts meant to go viral). Trademark/domain UNVERIFIED. Rename happens in S-Brand via `studio/branding.py` (APP_NAME, REPO, ENV_PREFIX, data dir); not done yet.
-3. Assistant, on "next": S2b (pool settings page, consent dialog, key-save probe) or S4 (LLM cache, cancel, transactional output).
-Open questions for owner: none blocking; path of the FuseClip reference folder (a `FuseClip-0.75.1-research.zip` was attached rev 6; not opened yet; reference only).
+1. Owner: extract `PeakCut-update-rev8.zip` over the repo and commit: `git add -A && git commit -m "Windows baseline green; record ViralCut name" && git push origin develop`.
+2. Name chosen: **ViralCut** (English; clips best moments from streams into shorts meant to go viral). Trademark/domain UNVERIFIED. Rename in S-Brand via `studio/branding.py` (APP_NAME, REPO, ENV_PREFIX, data dir); not done.
+3. Assistant, on "next": S2b (pool settings page, consent dialog, key-save probe) or S4 (LLM cache, cancel, transactional output). S1b needs internet.
+Open questions for owner: none blocking (FuseClip reference zip attached rev 6, not opened; reference only).
 
 ## Unverified (flag, do not rely)
-Whole suite on Windows; `pins.json` hashes (empty); every limit/model id/context in `providers.default.json` (Cloudflare path and model are guesses); CI never ran on GitHub; background ffmpeg fetch vs first job (`bootstrap.wait()` unused); yt-dlp-ejs + Deno in clean venv; sherpa-onnx on clean Windows; Whisper speed on 4 cores; Urdu auto-captions; free-model JSON quality on Hindi/Urdu; unsigned-download warnings.
+`pins.json` hashes (empty); every limit/model id/context in `providers.default.json` (Cloudflare path and model are guesses); CI never ran on GitHub; background ffmpeg fetch vs first job (`bootstrap.wait()` unused); yt-dlp-ejs + Deno in clean venv; sherpa-onnx on clean Windows; Whisper speed on 4 cores; Urdu auto-captions; free-model JSON quality on Hindi/Urdu; unsigned-download warnings.
