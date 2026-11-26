@@ -382,6 +382,20 @@ out, tin, tout = ai.call("auto", "hello", S)
 check("ai.call('auto') goes through the pool", (out[0]["hook"], tin, tout, ai.route("auto")), ("H", 500, 50, "a/m"))
 pool._pool = None
 
+# ================================================================ a retired model on the Gemini-style transport
+reset_server()
+calls = []
+def fake_gemini(p, m, key, prompt, schema, timeout):
+    calls.append(m["id"])
+    if m["id"] != "new-model":
+        raise pool.ProviderError(404, None, "not found")
+    return {"ok": True}, 1, 1
+gm = [{"id": i, "ctx": 100000, "json_mode": "schema", "tier": 1, "limits": {"rpm": None, "rpd": None, "tpm": None, "tpd": None, "reset": "utc"}, "status": "active"} for i in ("old-a", "old-b", "new-model")]
+pg = make([prov("g", models=gm, adapter="gemini")], transports={"gemini": fake_gemini})
+r = pg.probe("g")
+check("a key check skips models the service no longer has", (r["key_ok"], r["model"], calls), (True, "new-model", ["old-a", "old-b", "new-model"]))
+check("the missing ones are switched off, the working one is not", (pg.ledger.state("g", "old-a")["disabled"] != "", pg.ledger.state("g", "new-model")["disabled"]), (True, ""))
+
 srv.shutdown()
 print("ALL PASSED" if not fails else f"{len(fails)} failed: {fails}")
 shutil.rmtree(work, ignore_errors=True)

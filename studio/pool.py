@@ -685,8 +685,19 @@ class Pool:
                             break
             else:
                 send = self.transports[p["adapter"]]
-                send(p, m, key, 'Reply with {"ok": true}', {"type": "OBJECT", "properties": {"ok": {"type": "BOOLEAN"}}}, t)
-                info.update(key_ok=True, json_mode="schema")
+                for i, cand in enumerate(models[:3]):          # a model the service no longer has (404): try the next one
+                    try:
+                        send(p, cand, key, 'Reply with {"ok": true}', {"type": "OBJECT", "properties": {"ok": {"type": "BOOLEAN"}}}, t)
+                    except ProviderError as e:
+                        if e.status in (404, 410) and i + 1 < len(models[:3]):
+                            self.ledger.update(provider_id, cand["id"], disabled=f"not found (status {e.status}); check the model name")
+                            continue
+                        raise
+                    m = cand
+                    info.update(model=m["id"], key_ok=True, json_mode="schema")
+                    if self.ledger.state(provider_id, m["id"])["disabled"].startswith("not found"):
+                        self.ledger.update(provider_id, m["id"], disabled="")
+                    break
         except NotJSON:
             info.update(key_ok=True, note="The service answered, but not in JSON.")
         except ProviderError as e:

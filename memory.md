@@ -1,4 +1,4 @@
-# memory.md (rev 12, 2026-11-26, current state only)
+# memory.md (rev 13, 2026-11-26, current state only)
 
 ## Project
 - Fork `muzammilAwan-dev/PeakCut` (company Amfaiz), branch `develop` only. Product name: **ViralCut** (repo name unchanged).
@@ -34,6 +34,8 @@
 ## Windows results
 - 2026-11-26 baseline on rev11: all green except 2 tests reading the key file as plain text (DPAPI sealed it, so DPAPI works on this PC). Fixed in rev12 (tests unseal). Pins filled (ffmpeg hash matched publisher; Deno trusted on first download).
 - Python: `python` is 3.14 (unusable); run tests via `tools\windows-baseline.bat` (picks 3.13).
+
+- Real test: Gemini free key got 404 (gemini-2.5-flash closed to new projects). rev13 switches the catalog to 3.5-flash-lite / 3.8-flash / 3.1-flash-lite and the key check skips 404 models. Free-tier access of those ids UNVERIFIED until owner re-tests. Optional face package installed in `.venv` (use `.venv\Scripts\python.exe`).
 
 ## Next
 - Owner applies rev12, re-runs windows-baseline.bat, then continues `docs/RELEASE_TEST.md` from step 4.
