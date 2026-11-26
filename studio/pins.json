@@ -1,28 +1,33 @@
 {
   "schema": 1,
-  "note": "Exact download addresses and SHA-256 fingerprints for the programs ViralCut fetches. A program with no sha256 is never downloaded. Fill these on a machine with internet: python tools/make_pins.py (see docs/STATUS.md).",
+  "note": "Exact download addresses and SHA-256 fingerprints for the programs ViralCut fetches. A program with no sha256 is never downloaded. Fill these on a machine with internet: python tools/fill_pins.py (see docs/STATUS.md).",
   "tools": {
     "ffmpeg": {
-      "version": "",
+      "version": "autobuild-2026-11-25-12-41",
       "platforms": {
         "win64": {
-          "url": "",
-          "sha256": "",
-          "size": 0,
+          "url": "https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-11-25-12-41/ffmpeg-N-129288-gc81e35cf2b-win64-gpl.zip",
+          "sha256": "ee17bc29170b6f1d6685985260900c57c92967aaaabaf6f2bc8c65b67d76b8c5",
+          "size": 205524259,
           "archive": "zip",
-          "files": {"ffmpeg.exe": "bin/ffmpeg.exe", "ffprobe.exe": "bin/ffprobe.exe"}
+          "files": {
+            "ffmpeg.exe": "bin/ffmpeg.exe",
+            "ffprobe.exe": "bin/ffprobe.exe"
+          }
         }
       }
     },
     "deno": {
-      "version": "",
+      "version": "2.9.8",
       "platforms": {
         "win64": {
-          "url": "",
-          "sha256": "",
-          "size": 0,
+          "url": "https://github.com/denoland/deno/releases/download/v2.9.8/deno-x86_64-pc-windows-msvc.zip",
+          "sha256": "cba84b26e0df5ae7f74fc66b86a95b866872a86292ebd84fa1e959927edd93bf",
+          "size": 42917472,
           "archive": "zip",
-          "files": {"deno.exe": "deno.exe"}
+          "files": {
+            "deno.exe": "deno.exe"
+          }
         }
       }
     }

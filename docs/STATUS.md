@@ -6,7 +6,7 @@ Branch: `develop`. Last updated: 2026-11-19 (everything that can be built and te
 | --- | --- | --- |
 | Task 1 | Audit (`docs/AUDIT.md`) | done |
 | S0 | Fork hygiene, branding, CI, VERSION, update check | done (Windows suite green) |
-| S1 | Engine bootstrap: ffmpeg, Deno | built; **pins empty**: run `python tools/fill_pins.py` (S1b) |
+| S1 | Engine bootstrap: ffmpeg, Deno | built; pins filled (2026-11-26); first-run fetch not yet tried |
 | S1b | yt-dlp nightly + daily check | **not built** (needs internet to verify; yt-dlp is pinned in `requirements.txt`) |
 | S2 | Pool backend | done (Windows green) |
 | S2b | Pool settings tab, consent dialog, key-save check | **built**, checked in a real browser; real providers UNVERIFIED |
@@ -23,7 +23,7 @@ Branch: `develop`. Last updated: 2026-11-19 (everything that can be built and te
 | S-Brand | Name ViralCut, new logos, `VIRALCUT_*` settings | done (the GitHub repository name is unchanged) |
 | Release | Clean-VM test | **owner**: follow `docs/RELEASE_TEST.md` |
 
-Sandbox suite: 25 files, 715 checks, all passed (2026-11-19).
+Sandbox suite: all passed. Windows suite 2026-11-26: all passed except 2 key-file checks that did not expect Windows key sealing (test fixed in rev 12).
 
 ## Baseline
 **First Windows attempt (2026-11-17): did not run.** The machine has Python 3.14.6; `pip install -r requirements.txt` failed on numpy 2.2.6 (no 3.14 wheel, no C compiler). Fix: `tools\windows-baseline.bat` now finds a Python that fits (or offers to install one) by itself, so just run it again. ffmpeg was found at `C:\ffmpeg\bin`.
@@ -38,7 +38,7 @@ Sandbox suite: 25 files, 715 checks, all passed (2026-11-19).
 - Path of the extracted FuseClip reference folder (kept outside the repo; never opened).
 
 ## Known UNVERIFIED (resolve by experiment before relying on them)
-- `studio/pins.json` is empty: ffmpeg and Deno addresses and SHA-256 values must be filled with `tools/make_pins.py` and compared with the publishers' checksum files.
+- `studio/pins.json` filled 2026-11-26 on Windows (`tools/fill_pins.py`): ffmpeg autobuild-2026-11-25-12-41 (hash matches the publisher's), Deno 2.9.8 (no publisher hash; trusted on first download). Not yet used by a real first-run fetch.
 - The pool catalog (`studio/providers.default.json`): every limit, model id, context size and data-terms statement was copied from PLAN section 4.1 and not re-checked; Cloudflare's OpenAI-compatible path, model id and context size are guesses flagged inside the file.
 - A first-run on a clean Windows machine: does the background fetch finish before the first job needs ffmpeg? (`bootstrap.wait()` exists; no job calls it yet. S3.)
 - CI (`.github/workflows/ci.yml`) has never run on GitHub; Linux may need ffmpeg installed.

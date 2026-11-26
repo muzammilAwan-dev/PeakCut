@@ -13,7 +13,7 @@ for mod in ("httpx", "sqlalchemy", "sqlalchemy.event", "soundfile", "psycopg"):
     if mod.split(".")[0] in missing:
         sys.modules[mod] = MagicMock()
 import numpy as np
-from studio import ai, brain, config, jsoncheck, pool
+from studio import ai, brain, config, jsoncheck, pool, vault
 from studio.ledger import Ledger
 
 fails = []
@@ -173,7 +173,7 @@ ask(pl2)
 check("401: a new key switches it on again", (hits["a"], pl2.last_route()), (2, "a/m"))
 check("a key is sent as a bearer token and is not echoed into errors", seen[-1][2], "Bearer brand-new-key-123")
 check("the key is saved in the settings file, and only its last four letters are shown",
-      (json.loads(Path(pl2.settings.path).read_text())["keys"]["a"], [s["key_hint"] for s in pl2.status() if s["id"] == "a"][0]), ("brand-new-key-123", "-123"))
+      (vault.unseal(json.loads(Path(pl2.settings.path).read_text())["keys"]["a"]), [s["key_hint"] for s in pl2.status() if s["id"] == "a"][0]), ("brand-new-key-123", "-123"))
 
 # ================================================================ other errors
 reset_server()

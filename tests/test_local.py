@@ -11,7 +11,7 @@ os.environ.update(DATABASE_URL="", PEAKCUT_ACCOUNTS="0", PEAKCUT_AI_PROVIDER="ge
 sys.path.insert(0, ".")
 from fastapi.testclient import TestClient  # noqa: E402
 
-from studio import ai, config, db, server  # noqa: E402
+from studio import ai, config, db, server, vault  # noqa: E402
 
 db.init()
 fails = []
@@ -61,7 +61,7 @@ r = put({"provider": "gemini", "models": "model-a, model-b", "key": KEY})
 check("the key is saved", (r.status_code, r.json()["ready"], r.json()["models"], r.json()["key_hint"]), (200, True, ["model-a", "model-b"], "5678"))
 check("the key itself is never sent back", KEY in r.text or KEY in c.get("/api/ai").text or KEY in c.get("/api/status").text, False)
 check("every page now says the AI is ready", c.get("/api/status").json()["ai"], lambda x: x["ready"] and x["provider"] == "Gemini" and x["model"] == "model-a")
-check("it is kept in the data folder", json.loads((config.DATA_DIR / "ai.json").read_text())["key"], KEY)
+check("it is kept in the data folder", vault.unseal(json.loads((config.DATA_DIR / "ai.json").read_text())["key"]), KEY)
 r = put({"provider": "gemini", "models": "model-c", "key": ""})
 check("saving again without typing the key keeps it", (r.status_code, r.json()["has_key"], ai.key()), (200, True, KEY))
 check("changing service without a key is refused, and the old key is not carried over", put({"provider": "openai", "models": "m"}).status_code, 400)

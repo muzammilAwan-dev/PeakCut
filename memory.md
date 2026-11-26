@@ -1,4 +1,4 @@
-# memory.md (rev 11, 2026-11-19, current state only)
+# memory.md (rev 12, 2026-11-26, current state only)
 
 ## Project
 - Fork `muzammilAwan-dev/PeakCut` (company Amfaiz), branch `develop` only. Product name: **ViralCut** (repo name unchanged).
@@ -25,11 +25,15 @@
 ## UNVERIFIED
 - New work has never run on Windows (last Windows-green = rev 8).
 - Real providers (Groq/Cloudflare/Gemini): limits, probe, JSON modes.
-- fill_pins asset names; portable build; first-run ffmpeg fetch; DPAPI; extension in real Chrome (and with accounts ON); face quality on real streams.
+- portable build; first-run ffmpeg fetch; DPAPI (seen working on owner's Windows 11 2026-11-26); extension in real Chrome (and with accounts ON); face quality on real streams.
 
 ## Environment
 - Sandbox: PyPI only. Python 3.13 (3.14 unusable). Owner: Win10 LTSC/11, Git Bash, 16 GB, `E:\Github Projects\PeakCut`, ffmpeg `C:\ffmpeg\bin`, chat upload cap 30 MB/file.
 - Sandbox helpers: `/home/claude/mkzip.py N` builds the overwrite zip; venv `/home/claude/venv`.
 
+## Windows results
+- 2026-11-26 baseline on rev11: all green except 2 tests reading the key file as plain text (DPAPI sealed it, so DPAPI works on this PC). Fixed in rev12 (tests unseal). Pins filled (ffmpeg hash matched publisher; Deno trusted on first download).
+- Python: `python` is 3.14 (unusable); run tests via `tools\windows-baseline.bat` (picks 3.13).
+
 ## Next
-- Owner commits rev 11, then runs `docs/RELEASE_TEST.md` step by step.
+- Owner applies rev12, re-runs windows-baseline.bat, then continues `docs/RELEASE_TEST.md` from step 4.
