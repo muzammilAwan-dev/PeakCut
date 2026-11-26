@@ -1,8 +1,8 @@
-"""Is there a newer PeakCut? Compares the version running here with the latest on GitHub.
+"""Is there a newer ViralCut? Compares the version running here with the latest on GitHub.
 
 The version here is the git commit this folder is on (read straight from .git, no git program needed). A copy
 without .git (a downloaded zip) carries a file named VERSION beside the app with the commit it was built from. Every few
-hours PeakCut asks GitHub's public API what has been added since; nothing about this server or its users is sent,
+hours ViralCut asks GitHub's public API what has been added since; nothing about this server or its users is sent,
 only the two commit ids. The owner then sees a notice in the dashboard with what changed and how to update.
 
     PEAKCUT_UPDATE_REPO     where to look (default: this fork's repository, see branding.py)

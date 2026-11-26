@@ -4,7 +4,7 @@ No real service is called and no key is needed."""
 import calendar, collections, http.server, importlib.util, json, os, shutil, sys, tempfile, threading, time
 from pathlib import Path
 os.environ["PEAKCUT_DATA"] = tempfile.mkdtemp(prefix="pc-pool-")
-os.environ.update(PEAKCUT_AI_PROVIDER="pool", PEAKCUT_AI_KEY="", PEAKCUT_BOOTSTRAP="0", NO_PROXY="127.0.0.1,localhost", no_proxy="127.0.0.1,localhost")
+os.environ.update(PEAKCUT_LLM_CACHE="0", PEAKCUT_AI_PROVIDER="pool", PEAKCUT_AI_KEY="", PEAKCUT_BOOTSTRAP="0", NO_PROXY="127.0.0.1,localhost", no_proxy="127.0.0.1,localhost")
 os.environ.pop("PEAKCUT_AI_PRIVACY", None)
 sys.path.insert(0, ".")
 from unittest.mock import MagicMock
@@ -87,7 +87,7 @@ def prov(pid, trains="no", verified="2026-11-15", tier=1, limits=None, local=Fal
          "models": [{"id": "m", "ctx": 100000, "json_mode": "object", "tier": tier, "limits": lim, "status": "active"}] if models is None else models}
     d.update(extra); return d
 
-def make(provs, ledger_path=":memory:", env=None, clock=None, **kw):
+def make(provs, ledger_path=":memory:", env=None, clock=None, consent=True, **kw):
     cat = work / f"cat-{len(list(work.glob('cat-*')))}.json"
     cat.write_text(json.dumps({"providers": provs}), encoding="utf-8")
     keys = {f"{p['id'].upper()}_KEY": "k-" + p["id"] * 8 for p in provs}
@@ -95,6 +95,7 @@ def make(provs, ledger_path=":memory:", env=None, clock=None, **kw):
     pl = pool.Pool(pool.Catalog(cat), Ledger(ledger_path), pool.Settings(work / f"s-{cat.stem}.json", env={**keys, **(env or {})}),
                    clock=clock, sleep=clock.sleep, timeout=kw.pop("timeout", 5), est_out=kw.pop("est_out", 100), **kw)
     pl.clock_obj = clock
+    if consent: pl.settings.change(None, "consent", True)
     return pl
 ask = lambda pl, prompt="Find clips.", schema=S: pl.complete_json(prompt, schema)
 

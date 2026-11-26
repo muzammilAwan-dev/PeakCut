@@ -1,4 +1,4 @@
-# Working on PeakCut
+# Working on ViralCut
 
 A short map for contributors and AI coding assistants.
 
@@ -25,6 +25,12 @@ A short map for contributors and AI coding assistants.
 | `studio/jsoncheck.py` | Checks an AI answer against its schema and keeps only the usable items |
 | `tools/pyenv.py`, `tools/baseline.py`, `tools/find-python.bat` | Find or install a Python that fits, build `.venv`, run the whole test suite and save the log (`windows-baseline.bat`). No version is written down: it is computed from PyPI |
 | `tools/claude_pack.py`, `tools/sandbox.json` | Packs files into zips under 30 MB and joins them again (for working with an offline assistant) |
+| `studio/llmcache.py` | Remembers AI answers (by prompt) so asking again costs nothing |
+| `studio/vault.py` | Seals saved keys with Windows DPAPI (falls back to plain text, never loses a key) |
+| `studio/reframe.py` | Optional follow-the-face crop (OpenCV, default off) |
+| `studio/exttoken.py` | The pairing key for the browser extension in `extension/` |
+| `studio/evalkit.py`, `tools/eval.py` | Scores clip picking against human picks (`docs/EVAL.md`) |
+| `tools/build_portable.py`, `tools/fill_pins.py` | Builds the portable zip; fills `studio/pins.json` from release pages |
 | `studio/usage.py` | The record of AI calls and tokens shown on the AI usage page |
 | `studio/jobs.py` | The video pipeline and the fair queue |
 | `studio/live.py` | Live recording and clipping |

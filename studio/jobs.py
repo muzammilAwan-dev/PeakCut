@@ -126,7 +126,7 @@ def clean_options(options) -> dict:
         elif k == "style":
             v = v if v in render.STYLES else DEFAULTS["style"]
         elif k == "layout":
-            v = v if v in render.LAYOUTS else DEFAULTS["layout"]
+            v = v if v in render.layouts() else DEFAULTS["layout"]
         else:                                    # range_start, range_end: seconds into the video
             v = float(v)
             if not math.isfinite(v) or v < 0:
@@ -148,7 +148,7 @@ def public(job) -> dict:
     """What the browser may see: no server paths, no owner id."""
     out = {k: v for k, v in job.items() if k not in HIDDEN}
     out["source"] = {k: v for k, v in job["source"].items() if k != "path"}
-    out["clips"] = [{k: v for k, v in c.items() if k not in ("src", "fixed_words", "fixed_for")} for c in job["clips"]]
+    out["clips"] = [{k: v for k, v in c.items() if k not in ("src", "fixed_words", "fixed_for", "prev")} | {"can_undo": bool(c.get("prev"))} for c in job["clips"]]
     ai = job.get("ai") or {}
     out["ai"] = {"tokens": ai.get("tokens", 0), "note": ai.get("note", ""), "used": bool(ai.get("model"))}   # never the model, never raw errors
     if job.get("status") == "queued":
@@ -178,10 +178,77 @@ def save(job):
         tmp.replace(d / "job.json")
 
 
+class Cancelled(Exception):
+    """The owner stopped this video, or the supervisor found it stuck."""
+
+
+def _check(job):
+    if job.get("cancel"):
+        raise Cancelled(job.get("cancel_reason") or "Stopped by you.")
+
+
 def _set(job, **kw):
     with _lock:
-        job.update(kw)
+        if job.get("cancel") and kw.get("status") != "error":
+            raise Cancelled(job.get("cancel_reason") or "Stopped by you.")
+        job.update(kw, beat=time.time())
     save(job)
+
+
+BLOCK_LEAD = 60        # seconds of the previous part the AI also reads, so a moment that crosses the join is not lost
+
+
+def with_lead(prior, bw, shift, lead):
+    """The words the AI reads for one part: the last `lead` seconds of the part before, then this part. Times are
+    counted from `base` (the start of that lead-in). Returns (words, base)."""
+    lead = max(0.0, min(float(lead), shift)) if prior else 0.0
+    base = shift - lead
+    old = [dict(w, s=round(w["s"] - base, 2), e=round(w["e"] - base, 2)) for w in prior if base <= w["s"] < shift]
+    if not old:
+        return list(bw), shift
+    return old + [dict(w, s=round(w["s"] + lead, 2), e=round(w["e"] + lead, 2)) for w in bw], base
+
+
+def cancel(jid, uid=None, reason="Stopped by you.") -> bool:
+    """Stops a video: a waiting one never starts, a running one stops at its next step (a clip being cut at that
+    moment is finished first). What was already made stays. Returns False when there is nothing to stop."""
+    with _lock:
+        job = _jobs.get(jid)
+        if not job or (uid is not None and job["user"] != uid) or job.get("status") not in ("queued", "running"):
+            return False
+        job["cancel"], job["cancel_reason"] = True, reason
+        was_waiting = job["status"] == "queued"
+    if was_waiting:
+        job.update(status="error", error=reason, stage="Stopped")
+        job.pop("resume", None)
+        save(job)
+    else:
+        save(job)
+    return True
+
+
+STALL = 20 * 60          # seconds without any sign of life before the supervisor stops a video
+
+
+def supervise_once(now=None) -> list:
+    """Stops videos that show no sign of life (no stage or progress change) for STALL seconds, so one stuck
+    download or model never holds a worker for ever. Also clears half-written files. Returns the ids stopped."""
+    now = time.time() if now is None else now
+    stopped = []
+    for j in all_jobs():
+        if j.get("status") == "running" and not j.get("cancel") and now - float(j.get("beat") or j.get("created") or now) > STALL:
+            if cancel(j["id"], None, "This video stopped responding and was stopped. Try it again."):
+                stopped.append(j["id"])
+    return stopped
+
+
+def _supervisor():
+    while True:
+        time.sleep(60)
+        try:
+            supervise_once()
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
 
 
 def _remap(path, folder: Path):
@@ -335,6 +402,42 @@ def delete(jid):
     return bool(job)
 
 
+PREV_KEYS = ("start", "end", "hook", "title", "description", "style", "layout", "rev")
+
+
+def _keep_previous(job, clip):
+    """Before an edit is made: set aside the clip as it is now (its settings and its files), so one step can be undone."""
+    d = Path(job["dir"]) / "clips"
+    mp4, jpg = d / f"{clip['id']}.mp4", d / f"{clip['id']}.jpg"
+    if clip.get("status") != "done" or not (mp4.is_file() and jpg.is_file()):
+        return
+    keep = d / "_prev"
+    keep.mkdir(exist_ok=True)
+    shutil.copyfile(mp4, keep / mp4.name)
+    shutil.copyfile(jpg, keep / jpg.name)
+    clip["prev"] = {k: clip.get(k) for k in PREV_KEYS}
+
+
+def undo_clip(jid, cid) -> bool:
+    """Brings back the version before the last edit. Doing it again brings the edit back (the two swap places)."""
+    job = _jobs[jid]
+    clip = next(c for c in job["clips"] if c["id"] == cid)
+    prev = clip.get("prev")
+    d = Path(job["dir"]) / "clips"
+    keep = d / "_prev"
+    if clip.get("status") != "done" or not prev or not all((keep / f"{cid}.{e}").is_file() for e in ("mp4", "jpg")):
+        return False
+    now = {k: clip.get(k) for k in PREV_KEYS}
+    for e in ("mp4", "jpg"):
+        a, b, tmp = d / f"{cid}.{e}", keep / f"{cid}.{e}", keep / f"{cid}.{e}.swap"
+        os.replace(a, tmp)
+        os.replace(b, a)
+        os.replace(tmp, b)
+    clip.update(prev, version=clip.get("version", 0) + 1, prev=now)
+    save(job)
+    return True
+
+
 def request_render(jid, cid, changes: dict):
     job = _jobs[jid]
     clip = next(c for c in job["clips"] if c["id"] == cid)
@@ -354,8 +457,9 @@ def request_render(jid, cid, changes: dict):
             new[k] = str(changes[k])[:{"hook": 60, "title": 100, "description": 2000}.get(k, 20)]
     if new.get("style") not in render.STYLES:
         new["style"] = DEFAULTS["style"]
-    if new.get("layout") not in render.LAYOUTS:
+    if new.get("layout") not in render.layouts():
         new["layout"] = DEFAULTS["layout"]
+    _keep_previous(job, clip)
     clip.update(new, status="queued")
     save(job)
     _q.put(("clip", jid, cid))
@@ -386,8 +490,15 @@ def render_one(job, clip, words):
                 pass
         # the last word on it: whatever was said, nothing is drawn in Hindi or Urdu script
         near = [dict(w, s=w["s"] - off, e=w["e"] - off) for w in roman.words(raw)]
+        rev = render.revision(src, local, near, job["width"], job["height"])
+        made = d / "clips" / f"{clip['id']}.mp4"
+        if clip.get("rev") == rev and made.is_file() and (d / "clips" / f"{clip['id']}.jpg").is_file():
+            clip.update(status="done", error=None)            # nothing that shapes this clip changed: the file is already right
+            save(job)
+            return
+        _check(job)
         out = render.render_clip(src, d / "clips", clip["id"], local, near, job["width"], job["height"])
-        clip.update(out, status="done", version=clip.get("version", 0) + 1, error=None)
+        clip.update(out, status="done", version=clip.get("version", 0) + 1, error=None, rev=rev)
         post = {k: clip[k] for k in ("title", "description", "hashtags", "hook", "start", "end", "score")}
         (d / "clips" / f"{clip['id']}.json").write_text(json.dumps(post, indent=1), encoding="utf-8")
         if clip["version"] == 1:
@@ -605,6 +716,7 @@ def _run_job(job):
     for bi, (a, b) in enumerate(blocks):
         if bi < done_blocks:
             continue                      # transcribed and checked by the AI before the restart
+        _check(job)
         shift = a / 16000
         where = f" (minute {round((a - lo) / 16000 / 60)} of {round(span / 60)})" if len(blocks) > 1 else ""
         if yt:
@@ -617,6 +729,7 @@ def _run_job(job):
             hear(bi + 1)
             bw = heard.pop(bi).result()
         _set(job, progress=max(job["progress"], 0.14 + 0.78 * (b - lo) / max(1, hi - lo)))
+        prior = [w for w in words if shift - BLOCK_LEAD <= w["s"] < shift] if bi > 0 else []
         words += [dict(w, s=round(w["s"] + shift, 2), e=round(w["e"] + shift, 2)) for w in bw]
         (d / "words.json").write_text(json.dumps(words), encoding="utf-8")
         _set(job, stage="Finding the best moments" + where, word_count=len(words))
@@ -627,15 +740,19 @@ def _run_job(job):
             continue
         quota = max(1, math.ceil(left / (len(blocks) - bi)))
         s0 = int((a - lo) / 16000)
-        found, ai = brain.find_clips(bw, db[s0: s0 + int((b - a) / 16000) + 1], (b - a) / 16000, job["title"],
+        read, base = with_lead(prior, bw, shift, min(BLOCK_LEAD, s0))
+        back = int(shift - base)
+        found, ai = brain.find_clips(read, db[max(0, s0 - back): s0 + int((b - a) / 16000) + 1], (b - a) / 16000 + back, job["title"],
                                      job["uploader"], quota, int(o["min_len"]), int(o["max_len"]), notes.append)
         tokens += ai.get("tokens", 0)
         model = ai.get("model") or model
         if ai.get("note"):
             notes.append(ai["note"])
         for c in found:
-            c.update(id=f"clip{len(job['clips']) + 1:02d}", start=round(c["start"] + shift, 2),
-                     end=round(c["end"] + shift, 2), style=o["style"], layout=o["layout"], status="queued", version=0)
+            c.update(start=round(c["start"] + base, 2), end=round(c["end"] + base, 2))
+            if brain._overlaps(c["start"], c["end"], job["clips"]):
+                continue                  # the lead-in found a moment the part before already has
+            c.update(id=f"clip{len(job['clips']) + 1:02d}", style=o["style"], layout=o["layout"], status="queued", version=0)
             job["clips"].append(c)
             futures.append(renders.submit(ctx.bind(make), c, list(words)))
         job["ai"] = {"model": model, "tokens": tokens, "note": "", "log": notes[-5:]}
@@ -683,6 +800,10 @@ def _worker(quick_only=False):
             if kind == "job":
                 _q.done()
             continue
+        if kind == "job" and job.get("cancel"):           # stopped while waiting in line
+            job.pop("cancel", None)
+            _q.done()
+            continue
         token = ctx._uid.set(job["user"])  # everything this job does runs as its owner
         try:
             if kind == "job":
@@ -692,12 +813,15 @@ def _worker(quick_only=False):
                 clip = next(c for c in job["clips"] if c["id"] == cid)
                 render_one(job, clip, words)
         except Exception as e:  # noqa: BLE001
-            (Path(job["dir"]) / "error.log").write_text(traceback.format_exc(), encoding="utf-8")
+            stopped = isinstance(e, Cancelled)
+            if not stopped:
+                (Path(job["dir"]) / "error.log").write_text(traceback.format_exc(), encoding="utf-8")
             if kind == "job":
                 for c in job["clips"]:
                     if c.get("status") in ("queued", "rendering"):
                         c.update(status="error", error="The video stopped before this clip was made.")
-                _set(job, status="error", error=safe.friendly(e), stage="Stopped")
+                job.pop("cancel", None)
+                _set(job, status="error", error=str(e) if stopped else safe.friendly(e), stage="Stopped")
                 creators.log(job["creator"], f"Video failed: {safe.friendly(e)[:200]}")
         finally:
             ctx._uid.reset(token)
@@ -725,3 +849,6 @@ def start():
         threading.Thread(target=_worker, daemon=True).start()
     threading.Thread(target=_worker, args=(True,), daemon=True).start()   # re-making a single clip never waits behind whole videos
     threading.Thread(target=_live_worker, daemon=True).start()
+    threading.Thread(target=_supervisor, daemon=True).start()
+    for j in all_jobs():
+        render.clean_leftovers(Path(j["dir"]) / "clips")

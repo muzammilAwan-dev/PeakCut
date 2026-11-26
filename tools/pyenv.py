@@ -1,4 +1,4 @@
-"""Finds a Python that can run PeakCut, and builds the project's virtual environment with it.
+"""Finds a Python that can run ViralCut, and builds the project's virtual environment with it.
 
 Nothing about versions is written down here. Instead:
   1. It looks for every Python on this computer (the Windows `py` launcher, the PATH, the usual install folders).

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "note": "Exact download addresses and SHA-256 fingerprints for the programs PeakCut fetches. A program with no sha256 is never downloaded. Fill these on a machine with internet: python tools/make_pins.py (see docs/STATUS.md).",
+  "note": "Exact download addresses and SHA-256 fingerprints for the programs ViralCut fetches. A program with no sha256 is never downloaded. Fill these on a machine with internet: python tools/make_pins.py (see docs/STATUS.md).",
   "tools": {
     "ffmpeg": {
       "version": "",

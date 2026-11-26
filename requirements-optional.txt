@@ -1,0 +1,3 @@
+# Optional extras. The app runs without them; the feature next to each line stays hidden until it is installed.
+# Follow the face (a layout that keeps the speaker in frame). Built-in detector, runs on this computer, no model to download.
+opencv-python-headless==4.12.0.88

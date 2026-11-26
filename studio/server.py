@@ -1,4 +1,4 @@
-"""PeakCut web server. Run with:  python -m studio.server
+"""ViralCut web server. Run with:  python -m studio.server
 
 Public pages:  /  /login  /signup          The app:  /app  (signed-in users only)
 Everything under /api, /media and /oauth needs a session, except /api/auth/* and /api/public."""
@@ -21,12 +21,12 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 
 from . import admin as admins
 from . import account, load
-from . import (accounts, ai, alerts, auth, config, creators, ctx, db, jobs, live, media, posting,
+from . import (accounts, ai, alerts, auth, config, creators, ctx, db, exttoken, jobs, live, media, pool, posting,
                profiles, render, safe, transcribe, usage)
 
-app = FastAPI(title="PeakCut", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="ViralCut", docs_url=None, redoc_url=None, openapi_url=None)
 WEB = config.ROOT / "web"
-OPEN = ("/api/auth/", "/pub/", "/api/public", "/auth/google/", "/auth/verify", "/brand/", "/assets/", "/healthz", "/favicon.ico", "/robots.txt", "/sitemap.xml")
+OPEN = ("/api/ext/clip", "/api/auth/", "/pub/", "/api/public", "/auth/google/", "/auth/verify", "/brand/", "/assets/", "/healthz", "/favicon.ico", "/robots.txt", "/sitemap.xml")
 PAGES = {"/": "landing.html", "/login": "auth.html", "/signup": "auth.html", "/reset": "reset.html",
          "/privacy": "legal.html", "/terms": "legal.html", "/acceptable-use": "legal.html"}
 VIDEO_TYPES = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".ts", ".flv"}
@@ -82,7 +82,8 @@ class Gate:
 
         if method not in ("GET", "HEAD", "OPTIONS"):
             origin = req.headers.get("origin")
-            if origin and urlparse(origin).netloc != req.headers.get("host") and origin.rstrip("/") != config.PUBLIC_URL:
+            from_extension = path == "/api/ext/clip" and (origin or "").startswith(("chrome-extension://", "moz-extension://"))
+            if origin and not from_extension and urlparse(origin).netloc != req.headers.get("host") and origin.rstrip("/") != config.PUBLIC_URL:
                 return await deny(403, "Cross-site requests are not allowed.")
             # Only the upload may be big. Everything else is a small form, and is cut off at 256 KB whatever its
             # headers claim, so nobody can fill the server's memory by posting junk (signed in or not).
@@ -117,7 +118,7 @@ class Gate:
             # must have been asked for by its real address (a number, "localhost", or the address in settings),
             # so another website cannot reach it through a made-up name that points at this machine.
             if not _own_address(req.headers.get("host", "")):
-                return await deny(403, "Open PeakCut by its own address.")
+                return await deny(403, "Open ViralCut by its own address.")
             if path == "/" or path == "/reset" or path.startswith("/auth/"):
                 return await deny(303, "", redirect="/app")
             if path.startswith("/api/auth/") and path != "/api/auth/me":
@@ -249,7 +250,7 @@ def _ip(request: Request) -> str:
 
 
 def _own_address(host: str) -> bool:
-    """Is this the address PeakCut is really reached by? A number (127.0.0.1, 192.168.1.20), "localhost", or the
+    """Is this the address ViralCut is really reached by? A number (127.0.0.1, 192.168.1.20), "localhost", or the
     host in PEAKCUT_PUBLIC_URL."""
     import ipaddress
     name = host.strip().lower()
@@ -333,9 +334,9 @@ def reset_page():
 
 
 LEGAL = {
-    "privacy": ("Privacy Policy", "How PeakCut collects, uses and protects your data, including Google user data, cookies and your privacy rights."),
-    "terms": ("Terms of Service", "The terms for using PeakCut, the AI clipping tool for streams and videos: accounts, availability and liability."),
-    "acceptable-use": ("Acceptable Use Policy", "What you may and may not do with PeakCut, the AI stream clipping tool."),
+    "privacy": ("Privacy Policy", "How ViralCut collects, uses and protects your data, including Google user data, cookies and your privacy rights."),
+    "terms": ("Terms of Service", "The terms for using ViralCut, the AI clipping tool for streams and videos: accounts, availability and liability."),
+    "acceptable-use": ("Acceptable Use Policy", "What you may and may not do with ViralCut, the AI stream clipping tool."),
 }
 
 
@@ -350,9 +351,9 @@ def legal_page(request: Request):
     contact = config.CONTACT_EMAIL
     who = (f'<a href="mailto:{_h.escape(contact)}">{_h.escape(contact)}</a>' if contact
            else "the contact details on our website")
-    name = _h.escape(config.LEGAL_NAME or "PeakCut")
+    name = _h.escape(config.LEGAL_NAME or "ViralCut")
     law = (f"the laws of {_h.escape(config.LEGAL_COUNTRY)}" if config.LEGAL_COUNTRY
-           else "the laws of the country where PeakCut's operator is established")
+           else "the laws of the country where ViralCut's operator is established")
     out = (_LEGAL_HTML or (WEB / "legal.html").read_text(encoding="utf-8"))
     for k, v in {"{{CONTACT}}": who, "{{PAGE}}": page, "{{PAGE_PATH}}": page, "{{SITE}}": _h.escape(config.PUBLIC_URL),
                  "{{NAME}}": name, "{{LAW}}": law, "{{TITLE}}": title, "{{DESC}}": desc}.items():
@@ -546,7 +547,7 @@ def status(request: Request):
     return {"user": auth.public(me_), "update": updates.latest() if me_.is_admin else None, "accounts": config.ACCOUNTS, "links": {"repo": config.REPO_URL, "follow": config.FOLLOW_URL}, "ai": usage.brief(), "unread": notices.unread(),
             "tour": not accounts.settings()["tour_done"],
             "youtube": accounts.youtube_ready(), "connect": {p: accounts.can_connect(p) for p in accounts.PLATFORM_NAMES}, "max_upload_mb": config.MAX_UPLOAD_MB, "upload_part_mb": config.UPLOAD_PART_MB, "max_batch": config.MAX_ACTIVE_JOBS_PER_USER,
-            "styles": {k: v["label"] for k, v in render.STYLES.items()}, "layouts": render.LAYOUTS}
+            "styles": {k: v["label"] for k, v in render.STYLES.items()}, "layouts": render.layouts()}
 
 
 # ================================================================ videos
@@ -570,7 +571,7 @@ _disk: dict = {}
 def _quota():
     """Each account has a fixed amount of disk space. Measured at most once a minute."""
     if load.disk_full():
-        raise HTTPException(503, "PeakCut is out of space for new videos for the moment. Please try again shortly.")
+        raise HTTPException(503, "ViralCut is out of space for new videos for the moment. Please try again shortly.")
     uid = ctx.uid()
     got = _disk.get(uid)
     if not got or time.time() - got[0] > 60:
@@ -908,6 +909,28 @@ def rerender(jid: str, cid: str, body: dict = Body(...)):
     return jobs.public(job)
 
 
+@app.post("/api/jobs/{jid}/clips/{cid}/undo")
+def undo_clip(jid: str, cid: str):
+    job = _job_or_404(jid)
+    if not any(c["id"] == cid for c in job["clips"]):
+        raise HTTPException(404, "No such clip")
+    if job["status"] in ("queued", "running") or any(c.get("status") in ("queued", "rendering") for c in job["clips"] if c["id"] == cid):
+        raise HTTPException(409, "This clip is still being made. Try again when it has finished.")
+    if not jobs.undo_clip(jid, cid):
+        raise HTTPException(409, "There is nothing to undo for this clip.")
+    ctx.bump()
+    return jobs.public(job)
+
+
+@app.post("/api/jobs/{jid}/cancel")
+def cancel_job(jid: str):
+    _job_or_404(jid)
+    if not jobs.cancel(jid, ctx.uid()):
+        raise HTTPException(409, "This video is not being worked on.")
+    ctx.bump()
+    return jobs.public(jobs.get(jid))
+
+
 @app.delete("/api/jobs/{jid}")
 def delete_job(jid: str):
     job = _job_or_404(jid)
@@ -1019,7 +1042,7 @@ def email_preview(request: Request, kind: str = "verify"):
     from . import mailer
     _admin(request)
     if kind == "reset":
-        page = mailer.preview("Reset your password", "Someone asked to reset the password for this PeakCut account. If that was you, choose a new one below.",
+        page = mailer.preview("Reset your password", "Someone asked to reset the password for this ViralCut account. If that was you, choose a new one below.",
                               "Choose a new password", config.PUBLIC_URL + "/reset?t=example",
                               "The link works for one hour. If you didn't ask for this, ignore this email and your password stays the same.")
     else:
@@ -1034,9 +1057,9 @@ def test_email(request: Request):
     me_ = _admin(request)
     if not mailer.ready():
         raise HTTPException(400, "No email service is set up yet. Add the PEAKCUT_SMTP settings to .env first.")
-    mailer.send(me_.email, "PeakCut test email", "Your emails are working",
-                "This is a test from your PeakCut server. Account emails like this one will now reach people.",
-                "Open PeakCut", config.PUBLIC_URL + "/app", "You can ignore this message.")
+    mailer.send(me_.email, "ViralCut test email", "Your emails are working",
+                "This is a test from your ViralCut server. Account emails like this one will now reach people.",
+                "Open ViralCut", config.PUBLIC_URL + "/app", "You can ignore this message.")
     return {"sent_to": me_.email}
 
 
@@ -1264,6 +1287,128 @@ def ai_test(request: Request):
         raise HTTPException(502, "The AI did not answer: " + _ai_error(e))
 
 
+# ---------------------------------------------------------------- the free AI pool, set from the dashboard
+# Same rule as the AI key: only the owner (or an admin). Keys are saved, never sent back; the page sees the last four letters.
+def _pool_view() -> dict:
+    pl = pool.get()
+    return {"active": ai.provider() == "pool", "privacy": pl.settings.privacy(), "consent": pl.settings.consent(),
+            "local_models": pl.settings.local_models(), "services": pl.status()}
+
+
+def _pool_call(fn, *a):
+    try:
+        fn(*a)
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, str(e))
+    ctx.bump()
+    return _pool_view()
+
+
+@app.get("/api/pool")
+def pool_get(request: Request):
+    _admin(request)
+    return _pool_view()
+
+
+@app.put("/api/pool/use")
+def pool_use(request: Request, body: dict = Body(...)):
+    _admin(request)
+    if body.get("on") is not True:
+        raise HTTPException(400, "To stop using the pool, choose another service on the AI tab.")
+    ai.save("pool", ["auto"])
+    usage.forget_all()
+    ctx.bump()
+    return _pool_view()
+
+
+@app.put("/api/pool/key")
+def pool_key(request: Request, body: dict = Body(...)):
+    _admin(request)
+    pid = body.get("provider")
+    if "account_id" in body:
+        _pool_call(pool.get().save_account, pid, body.get("account_id"))
+    if "key" in body:
+        _pool_call(pool.get().save_key, pid, body.get("key"))
+    return _pool_view()
+
+
+@app.put("/api/pool/enabled")
+def pool_enabled(request: Request, body: dict = Body(...)):
+    _admin(request)
+    return _pool_call(pool.get().set_enabled, body.get("provider"), body.get("on") is True)
+
+
+@app.put("/api/pool/privacy")
+def pool_privacy(request: Request, body: dict = Body(...)):
+    _admin(request)
+    return _pool_call(pool.get().set_privacy, body.get("mode"))
+
+
+@app.put("/api/pool/consent")
+def pool_consent(request: Request, body: dict = Body(...)):
+    _admin(request)
+    return _pool_call(pool.get().set_consent, body.get("on") is True)
+
+
+@app.put("/api/pool/local")
+def pool_local(request: Request, body: dict = Body(...)):
+    _admin(request)
+    return _pool_call(pool.get().set_local_models, body.get("models"))
+
+
+@app.post("/api/pool/preview")
+def pool_preview(request: Request, body: dict = Body(default={})):
+    """What a typical request would carry and who would receive it: shown before the owner says yes."""
+    _admin(request)
+    try:
+        chars = max(500, min(200_000, int(body.get("chars") or 12_000)))
+    except (TypeError, ValueError):
+        chars = 12_000
+    return pool.get().preview("x" * chars)
+
+
+@app.post("/api/pool/probe")
+def pool_probe(request: Request, body: dict = Body(...)):
+    _admin(request)
+    _throttle("poolprobe:" + ctx.uid(), 20, 600)
+    try:
+        r = pool.get().probe(body.get("provider"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    ctx.bump()
+    return {"probe": r, **_pool_view()}
+
+
+# ---------------------------------------------------------------- the browser extension ("Clip this")
+# It carries one pairing key (studio/exttoken.py) and can do one thing: add a video link. That one route is the only
+# place a request from an extension is let through the cross-site check, and only with the right key.
+@app.get("/api/ext/token")
+def ext_token(request: Request):
+    u = _admin(request)
+    return {"token": exttoken.token_for(u.id)}
+
+
+@app.post("/api/ext/token/reset")
+def ext_token_reset(request: Request):
+    u = _admin(request)
+    return {"token": exttoken.reset(u.id)}
+
+
+@app.post("/api/ext/clip")
+def ext_clip(request: Request, body: dict = Body(...)):
+    uid = exttoken.owner_of(request.headers.get("x-token", ""))
+    if not uid:
+        _throttle("extbad:" + (request.client.host if request.client else "?"), 10, 600, "Too many wrong keys. Wait a few minutes.")
+        raise HTTPException(401, "The extension's key is wrong or was replaced. Copy it again from Settings.")
+    url = str(body.get("url", "")).strip()
+    if urlparse(url).scheme not in ("http", "https"):
+        raise HTTPException(400, "Only web links to videos can be added.")
+    with ctx.as_user(uid):
+        job = create_from_link({"url": url})
+        ctx.bump()
+    return {"ok": True, "id": job["id"], "title": job.get("title") or "", "message": "Added. Open ViralCut to see it."}
+
+
 # ================================================================ posting, accounts, settings
 @app.get("/api/overview")
 def overview():
@@ -1396,7 +1541,7 @@ def test_alert():
         auth_problem = str(e)
     if auth_problem:
         raise HTTPException(429, auth_problem)
-    problems = alerts.send("PeakCut: test message. Alerts are working.")
+    problems = alerts.send("ViralCut: test message. Alerts are working.")
     if problems:
         raise HTTPException(400, "; ".join(problems))
     return {"ok": True}
@@ -1454,9 +1599,9 @@ def admin_delete_user(request: Request, uid: str, body: dict = Body(...)):
 
 
 def main():
-    print(f"\n  PeakCut is running:  {config.PUBLIC_URL}\n")
+    print(f"\n  ViralCut is running:  {config.PUBLIC_URL}\n")
     if not config.ACCOUNTS and (config.HTTPS or config.HOST not in ("127.0.0.1", "localhost", "::1")):
-        print("  Sign-in is off, so anyone who can reach this address can use PeakCut and its AI key.\n"
+        print("  Sign-in is off, so anyone who can reach this address can use ViralCut and its AI key.\n"
               "  On a server other people can reach, set PEAKCUT_ACCOUNTS=1 in .env.\n", flush=True)
     if config.env("PEAKCUT_AUTO_RELOAD") == "1":
         # restart by itself whenever the server code changes (pages in web/ never need a restart)

@@ -3,13 +3,13 @@
 New code reads the name, the repository, the copyright line, the data folder name and the setting prefix from here
 instead of writing them out. That way the later rename (slice S-Brand) changes this one file, not fifty.
 
-Nothing here imports another PeakCut module, so any file can use it, and it needs no packages.
+Nothing here imports another ViralCut module, so any file can use it, and it needs no packages.
 
 Settings keep working under their old names: `env("AI_KEY")` first looks for `<ENV_PREFIX>_AI_KEY` and then for the
 old `PEAKCUT_AI_KEY`."""
 import os
 
-APP_NAME = "PeakCut"
+APP_NAME = "ViralCut"
 COMPANY = "Amfaiz"
 COPYRIGHT = "Copyright (c) 2026 Amfaiz"
 
@@ -18,7 +18,7 @@ REPO = "muzammilAwan-dev/PeakCut"
 REPO_URL = f"https://github.com/{REPO}"
 
 DATA_DIR_NAME = "data"            # lives beside the app, so a copied folder keeps its projects and settings
-ENV_PREFIX = "PEAKCUT"            # the prefix new settings are written with
+ENV_PREFIX = "VIRALCUT"           # the prefix new settings are written with
 LEGACY_ENV_PREFIX = "PEAKCUT"     # the old prefix, always still understood
 
 

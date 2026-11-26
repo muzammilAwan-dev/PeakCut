@@ -7,7 +7,7 @@ import time
 
 import numpy as np
 
-from . import ai, config, jsoncheck, usage, roman
+from . import ai, config, jsoncheck, llmcache, usage, roman
 
 WINDOW_SEC, OVERLAP_SEC = 15 * 60, 60
 
@@ -168,6 +168,11 @@ def ask_ai(prompt, schema=None, purpose="AI call"):
     Returns (the answer, the model that gave it, tokens used) and notes the tokens in the usage record."""
     if not config.ai_ready():
         raise RuntimeError("The AI is not set up on this server.")
+    cacheable = not purpose.startswith("Live")          # live checks are about one moment and are never asked twice
+    if cacheable:
+        hit = llmcache.get(prompt, schema or SCHEMA)
+        if hit:
+            return hit[0], hit[1], 0                    # asked before: no call, no tokens
     last = None
     for model in ai.models():
         for attempt in range(3):
@@ -177,7 +182,10 @@ def ask_ai(prompt, schema=None, purpose="AI call"):
                 # keep only the usable part of the answer: one bad item no longer loses the whole window (audit D7).
                 # An answer that is wrong as a whole raises, and the next model is tried.
                 out, _dropped = jsoncheck.clean(out, schema or SCHEMA)
-                return out, ai.route(model), sent + wrote
+                used = ai.route(model)
+                if cacheable:
+                    llmcache.put(prompt, schema or SCHEMA, out, used, sent + wrote)
+                return out, used, sent + wrote
             except Exception as e:  # noqa: BLE001
                 last = e
                 if "HTTP 429" in str(e) or "HTTP 5" in str(e):
@@ -203,20 +211,39 @@ def _snap(clip, lines, words, min_len, max_len, duration):
     return round(max(0.0, s - 0.15), 2), round(min(duration, e + 0.35), 2)
 
 
-def fallback_by_loudness(db, words, n, max_len, duration):
-    """No AI available: take the loudest stretches that contain speech."""
+def _span_score(z, words_n, s, e, text):
+    """How promising a stretch looks without any AI: loudness, how much is being said, and signs of a reaction."""
+    seg = z[int(s): int(e) + 1] if len(z) else []
+    energy = float(np.mean(seg)) + 0.5 * float(np.max(seg)) if len(seg) else 0.0
+    pace = min(3.0, words_n / max(1.0, e - s)) / 3.0            # words per second, up to a fast talker
+    marks = min(3, text.count("!") + text.count("?"))
+    return energy + pace + 0.3 * marks
+
+
+def fallback_by_loudness(db, words, n, max_len, duration, min_len=15):
+    """No AI available: pick stretches from the transcript and the loudness together. Every pick starts where a line
+    of speech starts and ends where one ends, so a clip never begins or stops in the middle of a word."""
     z = loud_zscore(db)
-    picks, order = [], np.argsort(-z)
-    for sec in order:
-        s = max(0.0, float(sec) - max_len * 0.6)
-        e = min(duration, s + max_len)
-        if any(not (e <= p["start"] or s >= p["end"]) for p in picks):
-            continue
-        if not any(s <= w["s"] <= e for w in words):
+    lines = make_lines(words, z)
+    cands = []
+    for i, first in enumerate(lines):
+        words_n, text = 0, ""
+        for last in lines[i:]:
+            length = last["e"] - first["s"]
+            if length > max_len:
+                break
+            words_n += len(last["text"].split())
+            text += " " + last["text"]
+            if length >= min(min_len, duration):
+                cands.append((_span_score(z, words_n, first["s"], last["e"], text), first["s"], last["e"]))
+    picks = []
+    for score, s_, e_ in sorted(cands, key=lambda c: -c[0]):
+        s, e = round(max(0.0, s_ - 0.15), 2), round(min(duration, e_ + 0.35), 2)
+        if _overlaps(s, e, picks):
             continue
         picks.append({"start": s, "end": e, "score": 50, "category": "other", "hook": "WAIT FOR IT",
                       "title": "Loud moment", "description": "", "hashtags": [], "highlight_words": [],
-                      "reason": "Picked by loudness because the AI was unavailable."})
+                      "reason": "Picked by loudness and speech because the AI was unavailable."})
         if len(picks) >= n:
             break
     return picks
@@ -248,7 +275,7 @@ def find_clips(words, db, duration, title="", uploader="", max_clips=6, min_len=
             log(f"AI window {a:.0f}-{b:.0f}s failed: {e}")
     note = ""
     if not used_model:
-        found = fallback_by_loudness(db, words, max_clips, max_len, duration)
+        found = fallback_by_loudness(db, words, max_clips, max_len, duration, min_len)
         note = "The AI was unavailable, so clips were picked by loudness only."
     clips = []
     for c in sorted(found, key=lambda c: -_num(c.get("score"))):

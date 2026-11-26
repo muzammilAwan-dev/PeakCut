@@ -1,7 +1,7 @@
-"""Gets the helper programs PeakCut needs (ffmpeg and ffprobe, and Deno for YouTube) into the `bin/` folder.
+"""Gets the helper programs ViralCut needs (ffmpeg and ffprobe, and Deno for YouTube) into the `bin/` folder.
 
 How it works, in plain words:
-  * `bin/` beside the app is put first on the PATH once, when PeakCut starts. Every place that runs `ffmpeg` or
+  * `bin/` beside the app is put first on the PATH once, when ViralCut starts. Every place that runs `ffmpeg` or
     `ffprobe` by name then finds the copy in `bin/` first, with no change to those places.
   * If `bin/` cannot be written to (a read-only drive), a per-user folder is used instead.
   * A program is downloaded only when it is missing or not good enough (ffmpeg must have the H.264 encoder and the
@@ -246,7 +246,7 @@ def _install_zip(archive: Path, files: dict, outdir: Path):
     except zipfile.BadZipFile:
         raise DownloadError("the download is not a valid zip file")
     except PermissionError:
-        raise DownloadError("a program is in use, so it was not replaced. Close PeakCut's clips and try again")
+        raise DownloadError("a program is in use, so it was not replaced. Close ViralCut's clips and try again")
     finally:
         for tmp, _ in staged:
             tmp.unlink(missing_ok=True)

@@ -1,6 +1,6 @@
 # Contributing
 
-This is Amfaiz's fork of PeakCut (MIT). Start with [AGENTS.md](AGENTS.md) (map of the code and the rules) and
+This is Amfaiz's fork of ViralCut (MIT). Start with [AGENTS.md](AGENTS.md) (map of the code and the rules) and
 [docs/STATUS.md](docs/STATUS.md) (what is done and what is next).
 
 - Work on the `develop` branch. `main` only receives finished, tested work.

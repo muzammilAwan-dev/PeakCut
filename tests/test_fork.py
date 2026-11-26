@@ -110,7 +110,7 @@ try:
 finally:
     branding.ENV_PREFIX, branding.LEGACY_ENV_PREFIX = real
     os.environ.pop("PEAKCUT_T1", None); os.environ.pop("NEWAPP_T1", None)
-check("same prefix: no repeated names", branding.env_names("X"), ["PEAKCUT_X"])
+check("two prefixes: newest first, old name still understood", branding.env_names("X"), ["VIRALCUT_X", "PEAKCUT_X"])
 check("missing setting gives the default", branding.env("NOT_THERE_AT_ALL", "d"), "d")
 
 # ---- repository files that later slices rely on
@@ -120,6 +120,13 @@ ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 check("CI runs on Windows and Linux", "windows-latest" in ci and "ubuntu-latest" in ci and "tests/run.py" in ci)
 check("CONTRIBUTING.md and DECISIONS.md exist", (ROOT / "CONTRIBUTING.md").is_file() and (ROOT / "docs" / "DECISIONS.md").is_file())
 
+import importlib
+os.environ["VIRALCUT_PORT"] = "8123"; os.environ["PEAKCUT_PORT"] = "9999"
+check("the new setting prefix works for every setting and wins over the old one", importlib.reload(config).PORT, 8123)
+os.environ.pop("VIRALCUT_PORT"); importlib.reload(config)
+check("the old setting prefix still works", config.PORT, 9999)
+os.environ.pop("PEAKCUT_PORT"); importlib.reload(config)
+check("the product name shown is ViralCut", branding.APP_NAME, "ViralCut")
 print("ALL PASSED" if not fails else f"{len(fails)} failed")
 if "PEAKCUT_DATA" in os.environ and os.environ["PEAKCUT_DATA"].startswith(tempfile.gettempdir()) and "pc-fork-" in os.environ["PEAKCUT_DATA"]:
     shutil.rmtree(os.environ["PEAKCUT_DATA"], ignore_errors=True)

@@ -16,7 +16,7 @@ import threading
 
 import httpx
 
-from . import config
+from . import config, vault
 
 # name -> (label shown on the pages, address, how it is spoken to, where to get a key, an example model id)
 PROVIDERS = {
@@ -65,7 +65,7 @@ def current() -> dict:
     return {"provider": ALIASES.get(p, p),
             "models": list(d["models"]) if d.get("provider") else list(config.AI_MODELS),
             "base_url": (str(d.get("base_url") or "") if d.get("provider") else config.AI_BASE_URL).rstrip("/"),
-            "key": str(d["key"]) if d.get("provider") and "key" in d else config.ai_key()}
+            "key": vault.unseal(str(d["key"])) if d.get("provider") and "key" in d else config.ai_key()}
 
 
 def provider() -> str:
@@ -137,7 +137,7 @@ def save(provider_id: str, model_ids, address: str = "", new_key=None) -> dict:
     with _lock:
         f = _file()
         tmp = f.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"provider": p, "models": ms, "base_url": address, "key": k}), encoding="utf-8")
+        tmp.write_text(json.dumps({"provider": p, "models": ms, "base_url": address, "key": vault.seal(k)}), encoding="utf-8")
         try:
             os.chmod(tmp, 0o600)        # the key is only for whoever runs the server
         except OSError:

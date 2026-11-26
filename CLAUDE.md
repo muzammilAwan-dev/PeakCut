@@ -1,6 +1,6 @@
 @AGENTS.md
 
-# Standing instructions for Claude Code (fork of PeakCut)
+# Standing instructions for Claude Code (fork of ViralCut)
 
 Claude Code re-reads this file after every context compaction. Keep it under 200 lines. Details live in `docs/`.
 

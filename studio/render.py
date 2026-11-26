@@ -1,11 +1,14 @@
 """Turns a time range into a vertical clip: 9:16 layout, bouncy word captions, hook title, cover."""
+import hashlib
+import json
+import os
 import re
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
-from . import config
+from . import config, reframe
 from .media import NO_WINDOW, run
 
 W, H = config.OUT_W, config.OUT_H
@@ -79,6 +82,11 @@ def install_fonts():
 
 
 LAYOUTS = {"blur": "Full frame + blurred fill", "zoom": "Zoomed in + blurred fill", "crop": "Fill the screen (centre crop)"}
+FACE_LAYOUT = ("face", "Follow the face (beta)")          # offered only when OpenCV is installed (studio/reframe.py)
+
+
+def layouts() -> dict:
+    return {**LAYOUTS, FACE_LAYOUT[0]: FACE_LAYOUT[1]} if reframe.available() else dict(LAYOUTS)
 
 
 def _ts(t):
@@ -110,6 +118,8 @@ def _groups(words, per):
 
 def geometry(src_w, src_h, layout):
     """Where the video sits in the 1080x1920 frame, and where hook and captions go."""
+    if layout == "face":
+        return "face", H, 300, 1380
     if src_h >= src_w and layout != "crop":
         layout = "crop"  # already vertical or square: nothing to gain from a blurred fill
     if layout == "blur":
@@ -218,8 +228,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     return head + "\n".join(ev) + "\n"
 
 
-def _filter(layout, fg_h):
-    if layout == "crop":
+def _filter(layout, fg_h, xexpr=None):
+    if layout == "face" and xexpr:
+        return f"[0:v]fps={config.OUT_FPS},crop=w=floor(ih*9/16/2)*2:h=ih:x='{xexpr}':y=0,scale={W}:{H},setsar=1[v0];"
+    if layout == "crop" or layout == "face":
         return f"[0:v]fps={config.OUT_FPS},scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1[v0];"
     return (f"[0:v]fps={config.OUT_FPS},split=2[a][b];"
             f"[a]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=6:2,"
@@ -231,11 +243,63 @@ def _filter(layout, fg_h):
 _qsv_ok = None
 
 
+RENDER_VERSION = 1      # bump when the picture or sound a clip gets from the same settings changes (forces a remake)
+
+
+def revision(src: Path, clip: dict, words: list, src_w: int, src_h: int) -> str:
+    """A fingerprint of everything that decides what a clip looks and sounds like. Same fingerprint and the file is
+    still there: there is nothing to remake. Anything the owner edits changes it."""
+    try:
+        st = Path(src).stat()
+        source = [Path(src).name, st.st_size]
+    except OSError:
+        source = [str(src), 0]
+    stuff = [RENDER_VERSION, source, src_w, src_h, round(float(clip["start"]), 2), round(float(clip["end"]), 2),
+             clip.get("layout", "blur"), clip.get("style", "bounce"), clip.get("hook", ""), clip.get("highlight_words", []),
+             [(w.get("w"), round(float(w.get("s", 0)), 2), round(float(w.get("e", 0)), 2)) for w in words]]
+    return hashlib.sha256(json.dumps(stuff, ensure_ascii=False, default=str).encode("utf-8")).hexdigest()[:16]
+
+
+def commit(work: Path, out_dir: Path, name: str, exts=("jpg", "ass", "mp4")):
+    """Puts the finished files in place. Each is first copied beside its final name (where a full disk or a stop shows
+    up, with the old clip untouched) and only then renamed over it; the video goes last. A copy that fails leaves
+    nothing behind. A rename cannot be undone, but they are quick, and the clip's fingerprint is only saved after all of
+    them worked, so a stop in that moment is repaired by the next make instead of being trusted."""
+    staged = []
+    try:
+        for ext in exts:
+            tmp = out_dir / f"{name}.{ext}.new"
+            shutil.copyfile(work / f"{name}.{ext}", tmp)
+            staged.append((tmp, out_dir / f"{name}.{ext}"))
+        for tmp, final in staged:
+            os.replace(tmp, final)
+    finally:
+        for tmp, _final in staged:
+            tmp.unlink(missing_ok=True)
+
+
+def clean_leftovers(folder: Path) -> int:
+    """Removes half-written files (`*.new`) left by a stop in the middle of a commit."""
+    n = 0
+    for f in Path(folder).glob("**/*.new"):
+        try:
+            f.unlink()
+            n += 1
+        except OSError:
+            pass
+    return n
+
+
 def render_clip(src: Path, out_dir: Path, name: str, clip: dict, words: list, src_w: int, src_h: int) -> dict:
     """Writes <name>.mp4, <name>.jpg and <name>.ass into out_dir. Returns file names."""
     out_dir.mkdir(parents=True, exist_ok=True)
     start, end = clip["start"], clip["end"]
     layout, fg_h, hook_y, cap_y = geometry(src_w, src_h, clip.get("layout", "blur"))
+    xexpr = None
+    if layout == "face":
+        xexpr = reframe.plan(src, start, end, src_w, src_h)
+        if not xexpr:                                  # no face to follow: the normal layout, as if it had been chosen
+            layout, fg_h, hook_y, cap_y = geometry(src_w, src_h, "blur")
     ass = build_ass(words, start, end, clip.get("hook", ""), clip.get("style", "bounce"),
                     clip.get("highlight_words", []), hook_y, cap_y)
     # The clip is made in a short work folder and moved into place afterwards. The caption step of ffmpeg cannot
@@ -244,18 +308,18 @@ def render_clip(src: Path, out_dir: Path, name: str, clip: dict, words: list, sr
     # break the filter syntax).
     work = Path(tempfile.mkdtemp(prefix="pk"))
     try:
-        return _render_in(work, src, out_dir, name, start, end, layout, fg_h, ass)
+        return _render_in(work, src, out_dir, name, start, end, layout, fg_h, ass, xexpr)
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
 
-def _render_in(work: Path, src: Path, out_dir: Path, name: str, start, end, layout, fg_h, ass: str) -> dict:
+def _render_in(work: Path, src: Path, out_dir: Path, name: str, start, end, layout, fg_h, ass: str, xexpr=None) -> dict:
     global _qsv_ok
     (work / f"{name}.ass").write_text(ass, encoding="utf-8")
     (work / "f").mkdir()
     for f in config.FONTS_DIR.glob("*.ttf"):
         shutil.copyfile(f, work / "f" / f.name)
-    fc = _filter(layout, fg_h) + f"[v0]ass={name}.ass:fontsdir=f[v]"
+    fc = _filter(layout, fg_h, xexpr) + f"[v0]ass={name}.ass:fontsdir=f[v]"
     base = ["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.2f}", "-t", f"{end - start:.2f}", "-i", str(src),
             "-filter_complex", fc, "-map", "[v]", "-map", "0:a:0", "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
             "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", "-pix_fmt"]
@@ -279,6 +343,5 @@ def _render_in(work: Path, src: Path, out_dir: Path, name: str, start, end, layo
     cover_t = min(1.2, (end - start) / 2)
     run(["ffmpeg", "-y", "-v", "error", "-ss", f"{cover_t:.2f}", "-i", f"{name}.mp4", "-frames:v", "1",
          "-q:v", "3", f"{name}.jpg"], cwd=work)
-    for ext in ("mp4", "jpg", "ass"):
-        shutil.move(str(work / f"{name}.{ext}"), str(out_dir / f"{name}.{ext}"))
+    commit(work, out_dir, name)
     return {"file": f"{name}.mp4", "cover": f"{name}.jpg", "layout": layout}

@@ -2,7 +2,7 @@
 
     python tests/run.py
 
-Starts PeakCut on a spare port with an empty, temporary data folder, runs the tests against it, then stops it and
+Starts ViralCut on a spare port with an empty, temporary data folder, runs the tests against it, then stops it and
 deletes the folder. Your real data and your running server are never touched. No AI key is needed: the tests cover accounts, permissions, limits and the queue, not clip quality."""
 import os
 import shutil
@@ -60,6 +60,15 @@ def main() -> int:
                 ("no limits by default", ["tests/test_limits.py"]),
                 ("fetching ffmpeg and Deno (pinned, resumable, offline-safe)", ["tests/test_bootstrap.py"]),
                 ("the free AI pool: failover, cooldowns, privacy, repair, loudness-only end", ["tests/test_pool.py"]),
+                ("browser extension door and its files", ["tests/test_extension.py"]),
+                ("follow-the-face layout (optional; real-face checks need OpenCV)", ["tests/test_reframe.py"]),
+                ("sealed keys", ["tests/test_vault.py"]),
+                ("finding release files for the pins list", ["tests/test_fill_pins.py"]),
+                ("portable build logic (Python pick, launcher, folder, zip)", ["tests/test_portable.py"]),
+                ("clip-quality scoring and the eval command", ["tests/test_eval.py"]),
+                ("no-AI fallback from speech and loudness, reading across the join of two parts", ["tests/test_quality.py"]),
+                ("answer cache, clip fingerprint, safe output files, stop and supervisor", ["tests/test_pipeline.py"]),
+                ("free-pool settings page routes, consent gate and key-save check", ["tests/test_pool_settings.py"]),
                 ("the pack tool (split into small zips, join and check)", ["tests/test_claude_pack.py"]),
                 ("finding a Python that fits and building the virtual environment", ["tests/test_pyenv.py"]),
                 ("the fork's licence, names, version file and update source", ["tests/test_fork.py"])]

@@ -40,7 +40,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from . import branding, jsoncheck
+from . import branding, jsoncheck, vault
 from .ledger import Ledger
 
 ADAPTERS = ("openai", "gemini")
@@ -152,7 +152,7 @@ class Catalog:
 # ---------------------------------------------------------------- the owner's choices
 class Settings:
     """data/pool.json: keys, switches, privacy mode, local model names. The file is for the person who runs this
-    computer. (Encrypting it is slice S7, together with the other key files.)"""
+    computer. Keys in it are sealed by studio/vault.py."""
 
     def __init__(self, path, env=None):
         self.path, self.env = Path(path), env
@@ -198,7 +198,7 @@ class Settings:
     def key(self, p) -> str:
         v = self._section("keys").get(p["id"])
         if isinstance(v, str) and v.strip():
-            return v.strip()
+            return vault.unseal(v.strip())            # "" when it was sealed on another computer: no key until pasted again
         return (self._environ().get(p["key_env"]) or "").strip() if p["key_env"] else ""
 
     def account_id(self, p) -> str:
@@ -214,6 +214,17 @@ class Settings:
     def local_models(self) -> list:
         v = self.data().get("local_models")
         return [str(x) for x in v if re.fullmatch(r"[\w.\-:/@]{1,120}", str(x))][:5] if isinstance(v, list) else []
+
+    def consent(self) -> bool:
+        """Has the owner said online services may receive transcript text? Until then only local services answer."""
+        v = branding.env("AI_CONSENT")
+        if v is not None:
+            return str(v).strip().lower() in ("1", "true", "yes", "on")
+        return self.data().get("consent") is True
+
+    def probe_of(self, pid, model) -> dict:
+        v = self._section("probes").get(f"{pid}/{model}")
+        return v if isinstance(v, dict) else {}
 
     def change(self, section, name, value):
         with self._lock:
@@ -261,6 +272,18 @@ def _post(url, body, headers, timeout, key=""):
             return r.status, r.headers, r.read(8_000_000).decode("utf-8", "replace")
     except urllib.error.HTTPError as e:
         return e.code, e.headers, _redact(e.read(4000).decode("utf-8", "replace"), key)
+    except (urllib.error.URLError, OSError, http.client.HTTPException) as e:
+        reason = getattr(e, "reason", e)
+        raise ProviderError(None, None, "", "timeout" if isinstance(reason, TimeoutError) or "timed out" in str(reason) else "network")
+
+
+def _get(url, headers, timeout, key=""):
+    req = urllib.request.Request(url, method="GET", headers={"User-Agent": f"{branding.APP_NAME}-pool", **headers})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, r.headers, r.read(2_000_000).decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, e.headers, _redact(e.read(2000).decode("utf-8", "replace"), key)
     except (urllib.error.URLError, OSError, http.client.HTTPException) as e:
         reason = getattr(e, "reason", e)
         raise ProviderError(None, None, "", "timeout" if isinstance(reason, TimeoutError) or "timed out" in str(reason) else "network")
@@ -331,7 +354,11 @@ class Pool:
         if p["local"]:
             return [{"id": mid, "ctx": 8192, "json_mode": "object", "tier": 3, "limits": {"rpm": None, "rpd": None, "tpm": None, "tpd": None, "reset": "utc"}}
                     for mid in self.settings.local_models()]
-        return p["models"]
+        out = []
+        for m in p["models"]:
+            found = self.settings.probe_of(p["id"], m["id"]).get("json_mode")
+            out.append({**m, "json_mode": found} if m["json_mode"] == "unknown" and found in ("schema", "object", "none") else m)
+        return out
 
     def _resolved(self, p) -> "dict | None":
         """The service with {account_id} filled in, or None when a needed account id is missing."""
@@ -382,6 +409,8 @@ class Pool:
             bad = self._privacy_reason(p, now)
             if bad:
                 row(None, False, f"left out by the privacy setting: {bad}"); continue
+            if not p["local"] and not self.settings.consent():
+                row(None, False, "waiting for your OK to send text to online services"); continue
             if not models:
                 row(None, False, "no model chosen" if p["local"] else "no models listed"); continue
             for m in models:
@@ -568,7 +597,8 @@ class Pool:
                         "disabled": state["disabled"], "trains_on_data": p["privacy"]["trains_on_data"], "signup_url": p["signup_url"],
                         "usable": any(r["ok"] for r in mine), "waiting": any((not r["ok"]) and r["wait"] is not None for r in mine),
                         "reason": next((r["reason"] for r in mine if not r["ok"]), ""),
-                        "models": [{"id": r["model"], "ok": r["ok"], "reason": r["reason"]} for r in mine if r["model"]]})
+                        "models": [{"id": r["model"], "ok": r["ok"], "reason": r["reason"], "json_mode": self.settings.probe_of(p["id"], r["model"]).get("json_mode", "")}
+                                   for r in mine if r["model"]]})
         return out
 
     # ---------------------------------------------------------- changes from the settings page
@@ -579,13 +609,98 @@ class Pool:
             raise ValueError("Choose one of the services in the list.")
         if key and not re.fullmatch(r"\S{8,400}", key):
             raise ValueError("That does not look like a key.")
-        self.settings.change("keys", provider_id, key)
+        self.settings.change("keys", provider_id, vault.seal(key))
         self.ledger.update(provider_id, "", disabled="", fails=0, cooldown_until=0.0)     # a new key gives the service a fresh start
 
     def set_enabled(self, provider_id, on: bool):
         if not any(x["id"] == provider_id for x in self.catalog.providers()):
             raise ValueError("Choose one of the services in the list.")
         self.settings.change("enabled", provider_id, bool(on))
+
+    def save_account(self, provider_id, value):
+        if not any(x["id"] == provider_id and "{account_id}" in x["base_url"] for x in self.catalog.providers()):
+            raise ValueError("That service does not use an account id.")
+        value = str(value or "").strip()
+        if value and not re.fullmatch(r"[A-Za-z0-9_-]{4,64}", value):
+            raise ValueError("That does not look like an account id.")
+        self.settings.change("account_ids", provider_id, value)
+
+    def set_local_models(self, names):
+        names = [str(x).strip() for x in (names if isinstance(names, list) else str(names or "").split(",")) if str(x).strip()]
+        if any(not re.fullmatch(r"[\w.\-:/@]{1,120}", n) for n in names) or len(names) > 5:
+            raise ValueError("Type up to five model names, exactly as Ollama lists them.")
+        self.settings.change(None, "local_models", names)
+
+    def set_consent(self, on: bool):
+        self.settings.change(None, "consent", bool(on))
+
+    def probe(self, provider_id) -> dict:
+        """The one-time check after a key is saved (or when the owner presses Test): is the key accepted, which
+        models does the service list, and which JSON mode does its first model understand. At most four small
+        requests, never sent on a timer, and none of them carries any of the owner's text."""
+        p0 = next((x for x in self.catalog.providers() if x["id"] == provider_id), None)
+        if not p0:
+            raise ValueError("Choose one of the services in the list.")
+        p = self._resolved(p0)
+        key = self.settings.key(p0)
+        if p is None:
+            raise ValueError("Save the account id first.")
+        if p0["needs_key"] and not p0["local"] and not key:
+            raise ValueError("Save a key first.")
+        models = self._models(p0)
+        if not models:
+            raise ValueError("No model is chosen for this service yet.")
+        m = models[0]
+        info = {"at": self.clock(), "model": m["id"], "key_ok": None, "listed": [], "json_mode": "unknown", "note": ""}
+        t = min(self.timeout, 20)
+        try:
+            if p["adapter"] == "openai":
+                headers = {"Authorization": f"Bearer {key}"} if key else {}
+                status, _h, text = _get(f"{p['base_url']}/models", headers, t, key)
+                if status in (401, 403):
+                    info.update(key_ok=False, note="The service did not accept this key.")
+                elif status == 200:
+                    info["key_ok"] = True
+                    try:
+                        info["listed"] = [str(x["id"])[:120] for x in json.loads(text).get("data", []) if isinstance(x, dict) and "id" in x][:60]
+                    except (ValueError, AttributeError, TypeError, KeyError):
+                        pass
+                if info["key_ok"] is not False:
+                    base = {"model": m["id"], "max_tokens": 8, "messages": [{"role": "user", "content": 'Reply with {"ok": true}'}]}
+                    schema_rf = {"type": "json_schema", "json_schema": {"name": "probe", "strict": True, "schema": {
+                        "type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"], "additionalProperties": False}}}
+                    for mode, extra in (("schema", {"response_format": schema_rf}), ("object", {"response_format": {"type": "json_object"}}), ("none", {})):
+                        st, _h, text = _post(f"{p['base_url']}/chat/completions", {**base, **extra}, headers, t, key)
+                        if st in (401, 403):
+                            info.update(key_ok=False, note="The service did not accept this key.")
+                            break
+                        if st == 200:
+                            info["key_ok"] = True
+                            info["json_mode"] = mode
+                            if mode == "none":
+                                info["note"] = "It answered, but this model did not take a JSON setting; the pool will still check its answers."
+                            break
+                        if st == 429:
+                            info["note"] = "The service is busy or the free allowance is used up; try the check again later."
+                            break
+            else:
+                send = self.transports[p["adapter"]]
+                send(p, m, key, 'Reply with {"ok": true}', {"type": "OBJECT", "properties": {"ok": {"type": "BOOLEAN"}}}, t)
+                info.update(key_ok=True, json_mode="schema")
+        except NotJSON:
+            info.update(key_ok=True, note="The service answered, but not in JSON.")
+        except ProviderError as e:
+            if e.status in (401, 403):
+                info.update(key_ok=False, note="The service did not accept this key.")
+            else:
+                info["note"] = "The service could not be reached." if e.status is None else f"The service answered with an error ({e.status})."
+        if info["key_ok"] is False:
+            self.ledger.update(provider_id, "", disabled="key refused")
+        elif self.ledger.state(provider_id)["disabled"] == "key refused":
+            self.ledger.update(provider_id, "", disabled="")
+        if info["json_mode"] != "unknown":
+            self.settings.change("probes", f"{provider_id}/{m['id']}", {"json_mode": info["json_mode"], "at": info["at"]})
+        return {k: v for k, v in info.items() if k != "at"} | {"provider": provider_id}
 
     def set_privacy(self, mode):
         if mode not in PRIVACY_MODES:

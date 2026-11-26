@@ -1,27 +1,29 @@
 # Status (update at the end of every slice)
 
-Branch: `develop`. Last updated: 2026-11-17 (S0, S1 and the S2 backend built in an offline sandbox; see the notes below).
+Branch: `develop`. Last updated: 2026-11-19 (everything that can be built and tested offline is built; the real-test list is `docs/RELEASE_TEST.md`).
 
-| Slice | Scope (short) | State | Tag |
-| --- | --- | --- | --- |
-| Task 1 | Audit (`docs/AUDIT.md`) | done | n/a |
-| S0 | Fork hygiene, `studio/branding.py`, CI, VERSION file, update check on the fork | **built**, tests pass in the sandbox; needs one run of `python tests/run.py` on Windows | no tag (no git here) |
-| S1 | Engine bootstrap: ffmpeg, deno, yt-dlp into `bin/` on PATH | **built for ffmpeg and Deno** (54 checks); pins empty until `tools/make_pins.py` is run; yt-dlp nightly not done (S1b) | |
-| S2 | Pool v0: `complete_json`, `ai_ledger`, cooldowns, privacy toggle | **backend built** (87 checks against a mock AI server); settings page and consent dialog not built (S2b) | |
-| S1b | yt-dlp nightly + daily check, JS runtime proof (needs internet) | todo | |
-| S2b | Pool settings page (keys, privacy, status), consent preview dialog, capability probe on key save | todo | |
-| S3 | Portable build (embeddable Python, `data/` beside the app, launcher) | todo | |
-| S4 | Remaining gaps only: LLM cache, revision key, cancel/supervisor, transactional output | todo | |
-| S5 | Eval harness | todo | |
-| S6 | Quality: per-item validation (fixes silent window drop), block overlap, candidate scoring | todo | |
-| S6d | Hindi/Urdu pack | todo | |
-| S6e | Manual editing, review queue, undo | todo | |
-| S6f | Face reframing (default-off) | todo | |
-| S6b | Optional extras | todo | |
-| S7 | Security: key vault for 3 stores, LLM-output validation | todo | |
-| S8 | Browser extension | todo | |
-| S-Brand | Rename and rebrand | todo | |
-| Release | Clean-VM test, zip build, README, merge notes | todo | |
+| Slice | Scope (short) | State |
+| --- | --- | --- |
+| Task 1 | Audit (`docs/AUDIT.md`) | done |
+| S0 | Fork hygiene, branding, CI, VERSION, update check | done (Windows suite green) |
+| S1 | Engine bootstrap: ffmpeg, Deno | built; **pins empty**: run `python tools/fill_pins.py` (S1b) |
+| S1b | yt-dlp nightly + daily check | **not built** (needs internet to verify; yt-dlp is pinned in `requirements.txt`) |
+| S2 | Pool backend | done (Windows green) |
+| S2b | Pool settings tab, consent dialog, key-save check | **built**, checked in a real browser; real providers UNVERIFIED |
+| S3 | Portable build + launcher | **built, never run**: `python tools/build_portable.py` on Windows |
+| S4 | Answer cache, clip fingerprint, safe output, Stop button, supervisor | **built**, tested with real ffmpeg |
+| S5 | Eval harness (`tools/eval.py`) | built; needs a labelled set (`docs/EVAL.md`) |
+| S6 | Quality: speech+loudness fallback, 60 s overlap between parts | built; candidate pre-scoring for the AI **not built** (needs eval data first) |
+| S6d | Hindi/Urdu speech model | **not built**: needs a second speech model with word timings, which cannot be checked offline. Roman-letter captions already exist |
+| S6e | Undo one edit | built (one step, swaps with the edit). Review queue not built |
+| S6f | Follow-the-face layout | built, optional (`requirements-optional.txt`), real face test passes with OpenCV |
+| S6b | Optional extras | not built |
+| S7 | Key vault (Windows DPAPI) | built; real Windows sealing UNVERIFIED |
+| S8 | Browser extension "Clip this" | built; never loaded into a real browser |
+| S-Brand | Name ViralCut, new logos, `VIRALCUT_*` settings | done (the GitHub repository name is unchanged) |
+| Release | Clean-VM test | **owner**: follow `docs/RELEASE_TEST.md` |
+
+Sandbox suite: 25 files, 715 checks, all passed (2026-11-19).
 
 ## Baseline
 **First Windows attempt (2026-11-17): did not run.** The machine has Python 3.14.6; `pip install -r requirements.txt` failed on numpy 2.2.6 (no 3.14 wheel, no C compiler). Fix: `tools\windows-baseline.bat` now finds a Python that fits (or offers to install one) by itself, so just run it again. ffmpeg was found at `C:\ffmpeg\bin`.
@@ -32,8 +34,8 @@ Branch: `develop`. Last updated: 2026-11-17 (S0, S1 and the S2 backend built in 
 
 
 ## Open questions for the owner
-- Product name candidates for S-Brand (2 to 3).
-- Path of the extracted FuseClip reference folder (kept outside the repo).
+- Trademark and domain check for ViralCut.
+- Path of the extracted FuseClip reference folder (kept outside the repo; never opened).
 
 ## Known UNVERIFIED (resolve by experiment before relying on them)
 - `studio/pins.json` is empty: ffmpeg and Deno addresses and SHA-256 values must be filled with `tools/make_pins.py` and compared with the publishers' checksum files.
@@ -47,3 +49,9 @@ Branch: `develop`. Last updated: 2026-11-17 (S0, S1 and the S2 backend built in 
 - Free-provider JSON quality on Hindi and Urdu transcripts (S5 eval).
 - Whether unsigned downloads trigger Windows warnings (decide before public release).
 - sherpa-onnx native packaging on a clean Windows machine (S3 gate).
+- Every free provider: limits, model ids, the check request (`GET /models` and the 3 JSON-mode tries) and Cloudflare's path.
+- `tools/build_portable.py` and `tools/fill_pins.py` on Windows (asset names of the BtbN and Deno releases are assumed from memory).
+- Windows key sealing (`studio/vault.py`); moving `data/` to another computer asks for keys again.
+- Browser extension in a real Chrome or Edge; with sign-in switched on (`PEAKCUT_ACCOUNTS=1`) the extension door is untested.
+- Follow-the-face quality on real streams (the built-in detector sees front-facing faces only).
+- A stuck video is stopped after 20 minutes without any change; a clip being cut at that moment finishes first.

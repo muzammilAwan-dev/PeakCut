@@ -1,0 +1,14 @@
+:root { color-scheme: light dark; }
+body { width: 300px; margin: 0; padding: 14px; font: 14px/1.4 system-ui, "Segoe UI", sans-serif; background: Canvas; color: CanvasText; }
+h1 { font-size: 16px; margin: 0 0 6px; }
+.small { font-size: 12px; opacity: .7; margin: 0 0 10px; word-break: break-all; max-height: 3em; overflow: hidden; }
+button { width: 100%; padding: 9px; border: 0; border-radius: 8px; background: #ff8b33; color: #17110e; font: inherit; font-weight: 600; cursor: pointer; }
+button:hover { background: #ffa05a; }
+button:disabled { opacity: .5; cursor: default; }
+button.plain { background: transparent; border: 1px solid currentColor; margin-top: 8px; font-weight: 400; }
+#msg { min-height: 1.4em; margin: 10px 0 4px; }
+#msg.bad { color: #c0392b; }
+#msg.ok { color: #1e8a4c; }
+details { margin-top: 10px; font-size: 12px; }
+label { display: block; margin-top: 8px; }
+input { width: 100%; box-sizing: border-box; padding: 6px; margin-top: 3px; }

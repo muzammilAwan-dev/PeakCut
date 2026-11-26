@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Clip this</title><link rel="stylesheet" href="popup.css"></head>
+<body>
+  <h1>Clip this</h1>
+  <p id="page" class="small"></p>
+  <button id="go" type="button">Clip this video</button>
+  <p id="msg" role="status" aria-live="polite"></p>
+  <details id="setup"><summary>Settings</summary>
+    <label>ViralCut address <input id="server" type="text" spellcheck="false" placeholder="http://127.0.0.1:8765"></label>
+    <label>Key (Settings, Browser extension, in ViralCut) <input id="token" type="password" spellcheck="false" autocomplete="off"></label>
+    <button id="save" type="button" class="plain">Save</button>
+  </details>
+  <script src="popup.js"></script>
+</body></html>

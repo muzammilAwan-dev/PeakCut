@@ -1,5 +1,5 @@
 """Fill in one entry of studio/pins.json: downloads the file once, measures its SHA-256 and size, checks that the
-files PeakCut needs are inside, and writes the entry. Run this on a computer with internet, then commit pins.json.
+files ViralCut needs are inside, and writes the entry. Run this on a computer with internet, then commit pins.json.
 
     python tools/make_pins.py ffmpeg  <direct https address of the zip>  --version <release name>  [--sha256 <publisher's value>]
     python tools/make_pins.py deno    <direct https address of the zip>  --version 2.3.5           [--sha256 <publisher's value>]
