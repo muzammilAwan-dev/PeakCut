@@ -1,4 +1,4 @@
-# memory.md (rev 14, 2026-11-27, current state only)
+# memory.md (rev 15, 2026-11-27, current state only)
 
 ## Project
 - Fork `muzammilAwan-dev/PeakCut` (company Amfaiz), branch `develop` only. Product name: **ViralCut** (repo name unchanged).
@@ -38,6 +38,8 @@
 - Real test: Gemini free key got 404 (gemini-2.5-flash closed to new projects). rev13 switches the catalog to 3.5-flash-lite / 3.8-flash / 3.1-flash-lite and the key check skips 404 models. Free-tier access of those ids UNVERIFIED until owner re-tests. Optional face package installed in `.venv` (use `.venv\Scripts\python.exe`).
 
 - rev14 (S9): `studio/applog.py` log file `data/logs/viralcut.log`; `Pool.discover` + `/api/pool/discover` + button "Find working models" (ranks, tests best 6, pool uses only working); `/api/log`, `/api/log/download`; Settings shows log. Owner asked for it after Gemini 404.
+
+- rev15 (S10): `studio/trace.py` (trace/ per video); option `mode` stream|podcast (brain.build_prompt); per-row Settings + Make again in the composer; draft (480p) then `/api/jobs/{id}/final` (jobs.request_final/finalize_clip, media.audio_window). UNVERIFIED: yt-dlp `download_range` on real YouTube at 720/1080 after a 480p draft; offsets found by sound matching only tested with a fake cut.
 
 ## Next
 - Owner applies rev12, re-runs windows-baseline.bat, then continues `docs/RELEASE_TEST.md` from step 4.

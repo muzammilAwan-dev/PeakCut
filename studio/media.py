@@ -311,6 +311,15 @@ def extract_audio(src: Path, wav: Path):
          "-af", "aresample=async=1:first_pts=0", "-c:a", "pcm_s16le", str(wav)])
 
 
+def audio_window(path: Path, start: float, dur: float) -> np.ndarray:
+    """Just `dur` seconds of the sound of a file, from `start` seconds in (16 kHz, mono)."""
+    p = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{max(0.0, start):.2f}", "-t", f"{max(1.0, dur):.2f}", "-i", str(path), "-vn", "-ac", "1",
+                        "-ar", "16000", "-f", "s16le", "-"], capture_output=True, creationflags=NO_WINDOW, timeout=600)
+    if p.returncode != 0:
+        raise RuntimeError(f"ffmpeg failed: {p.stderr[-800:].decode('utf-8', 'replace')}")
+    return np.frombuffer(p.stdout, dtype=np.int16)
+
+
 def load_audio(wav: Path) -> np.ndarray:
     data, sr = sf.read(str(wav), dtype="int16")
     assert sr == 16000

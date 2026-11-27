@@ -961,6 +961,20 @@ def undo_clip(jid: str, cid: str):
     return jobs.public(job)
 
 
+@app.post("/api/jobs/{jid}/final")
+def make_final(jid: str, body: dict = Body(default={})):
+    """Draft clips -> full quality (the video's chosen quality). All draft clips, or the ones listed in `clips`."""
+    job = _job_or_404(jid)
+    _throttle("final:" + ctx.uid(), 20, 600, "That's a lot of full-quality requests in a short time. Wait a few minutes.")
+    ids = body.get("clips")
+    try:
+        jobs.request_final(jid, set(map(str, ids)) if isinstance(ids, list) else None)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    ctx.bump()
+    return jobs.public(job)
+
+
 @app.post("/api/jobs/{jid}/cancel")
 def cancel_job(jid: str):
     _job_or_404(jid)

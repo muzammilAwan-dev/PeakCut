@@ -14,7 +14,7 @@ def _root() -> Path:
 
 _lock = threading.RLock()
 
-DEFAULTS = {"name": "", "channel": "", "style": "bounce", "layout": "blur", "min_len": 15, "max_len": 60,
+DEFAULTS = {"name": "", "channel": "", "style": "bounce", "layout": "blur", "mode": "stream", "min_len": 15, "max_len": 60,
             "max_clips": 6, "min_score": 80, "auto_watch": False, "buffer_min": 20, "live_per_hour": 4, "ai_every_min": 3, "ai_only_on_spike": True, "auto_jump_pct": 60,
             "plan": "free", "decide_mode": "both", "must_clip_min": 0, "min_gap_min": 2,
             "trigger_words": "clip that, clip it",
@@ -69,6 +69,8 @@ def _clean(data: dict) -> dict:
             v = max(0.0, min(1000.0, float(v or 0)))
         elif k == "plan":
             v = v if v in ("free", "pro", "max") else "free"
+        elif k == "mode":
+            v = v if v in ("stream", "podcast") else "stream"
         elif k == "decide_mode":
             v = v if v in ("both", "either") else "both"
         elif k == "privacy":

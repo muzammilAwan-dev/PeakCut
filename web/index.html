@@ -315,6 +315,15 @@ label.ck input{accent-color:var(--brand);margin:0}
 .lp.wait .th,.sk{background:linear-gradient(90deg,#EFE7E1 0%,#F8F3EF 50%,#EFE7E1 100%);background-size:200% 100%;animation:shimmer 1.2s linear infinite}
 .sk{display:block;height:10px;border-radius:6px;margin:4px 0}
 .lp{position:relative;overflow:hidden}
+.lp .opt{flex:none;display:inline-flex;align-items:center;gap:6px;border:0;background:#fff;color:var(--dim);font:600 12px inherit;font-family:inherit;padding:6px 10px;border-radius:999px;cursor:pointer}
+.lp .opt:hover,.lp .opt.on{background:var(--brand-soft);color:var(--brand-ink)}.lp .opt svg{width:14px;height:14px}
+.lp .tx .mini{color:var(--brand-ink);font-weight:600}
+.ropt{background:#fff;border-radius:12px;padding:12px 14px;margin:-4px 0 4px;display:grid;gap:12px;border:1px solid var(--line)}
+.ropt .nums{display:flex;gap:12px;flex-wrap:wrap}.ropt label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--dim);font-weight:600}
+.ropt input[type=number]{width:84px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px}
+.ropt .hint{font-size:12px;color:var(--faint);margin:0}
+.badge.draft{background:#FFF1D6;color:#8A5300}
+.mode-note{font-size:12px;color:var(--faint);margin:6px 2px 0}
 .lp .th video{width:100%;height:100%;object-fit:cover;display:block}
 .lp .tx em{font-style:normal;color:#A12A2A}
 .lp .ok.up{background:var(--brand-soft);color:var(--brand-ink);min-width:52px;justify-content:center}
@@ -1361,6 +1370,10 @@ function drawAdd(variant) {
       <button class="btn primary" id="goBtn">${ic("scissors")}Make clips</button>
     </div>
     <div class="composer-opts" inert><div class="og">
+      <div class="ob wide"><div class="ot">What kind of video is it?</div><input type="hidden" id="o_mode" value="${esc(c?.mode ?? "stream")}"><div class="seg" role="group" aria-label="Kind of video">
+        <button type="button" data-seg="o_mode" data-v="stream" aria-pressed="${(c?.mode ?? "stream") === "stream"}">Game or stream<small>Finds the craziest moments</small></button>
+        <button type="button" data-seg="o_mode" data-v="podcast" aria-pressed="${(c?.mode ?? "stream") === "podcast"}">Podcast or talk<small>Finds the most useful parts</small></button></div>
+        <p class="mode-note">Every video in the list can also get its own settings: press <b>Settings</b> on its row.</p></div>
       <div class="ob wide"><div class="ot">Clips</div><div class="nsteps">
         ${stepper("o_max", "How many", c?.max_clips ?? 6, 1, 20, 1, "")}
         ${stepper("o_min", "Shortest", c?.min_len ?? 15, 5, 120, 5, "s")}
@@ -1368,9 +1381,12 @@ function drawAdd(variant) {
       </div></div>
       <div class="ob"><div class="ot">Caption style</div>${choice("o_style", Object.entries(S.status.styles).map(([k, v]) => ({v:k, label:v, prev:capPrev(k)})), c?.style ?? "bounce")}</div>
       <div class="ob"><div class="ot">Layout</div>${choice("o_layout", Object.entries(S.status.layouts).map(([k, v]) => ({v:k, label:LAYOUT_SHORT[k] || v, title:v, prev:`<span class="lay-prev ${esc(k)}"><span class="ph"><i></i></span></span>`})), c?.layout ?? "blur")}</div>
-      <div class="ob"><div class="ot">Video quality</div><input type="hidden" id="o_quality" value="720"><div class="seg" role="group" aria-label="Video quality">
+      <div class="ob"><div class="ot">Final quality</div><input type="hidden" id="o_quality" value="720"><div class="seg" role="group" aria-label="Final video quality">
         <button type="button" data-seg="o_quality" data-v="720" aria-pressed="true">720p<small>Fast</small></button>
         <button type="button" data-seg="o_quality" data-v="1080" aria-pressed="false">1080p<small>Sharper, about 2x slower</small></button></div></div>
+      <div class="ob"><div class="ot">Links: first look</div><input type="hidden" id="o_draft" value="1"><div class="seg" role="group" aria-label="First look">
+        <button type="button" data-seg="o_draft" data-v="1" aria-pressed="true">Small first<small>Quick draft, then you choose</small></button>
+        <button type="button" data-seg="o_draft" data-v="0" aria-pressed="false">Full quality<small>Slower, nothing to redo</small></button></div></div>
       <div class="ob"><div class="ot">Part of the video</div><div class="range">
         <label>From<input id="o_from" type="number" min="0" placeholder="start" aria-label="From minute">min</label>${ic("arrowr")}
         <label>To<input id="o_to" type="number" min="0" placeholder="end" aria-label="Up to minute">min</label></div></div>
@@ -1413,6 +1429,8 @@ document.addEventListener("click", e => {
     p.querySelector(".pv").textContent = po.querySelector(".pl").textContent; closePicks(); p.querySelector(".pick-btn").focus();
     p.querySelector("input[type=hidden]").dispatchEvent(new Event("change", {bubbles: true})); return; }
   if (!e.target.closest(".pick") || e.target.closest(".pick-new")) closePicks();
+  const rs = e.target.closest("[data-rseg]");
+  if (rs) { const it = rowItem(rs.dataset.rseg); if (it) { (it.o ||= {})[rs.dataset.f] = rs.dataset.f === "draft" ? rs.dataset.v === "1" : rs.dataset.v; drawAtt(); } return; }
   const sg = e.target.closest("[data-seg]");
   if (sg) { $("#" + sg.dataset.seg).value = sg.dataset.v;
     sg.parentElement.querySelectorAll("[data-seg]").forEach(b => b.setAttribute("aria-pressed", String(b === sg))); return; }
@@ -1432,7 +1450,8 @@ document.addEventListener("keydown", e => {
 const targetCreator = () => creatorId() || $("#o_creator")?.value || "";
 function jobOptions() {
   const n = id => { const v = $(id).value; return v === "" ? null : Number(v); };
-  const o = {max_clips:n("#o_max"), min_len:n("#o_min"), max_len:n("#o_maxlen"), style:$("#o_style").value, layout:$("#o_layout").value, quality:n("#o_quality")};
+  const o = {max_clips:n("#o_max"), min_len:n("#o_min"), max_len:n("#o_maxlen"), style:$("#o_style").value, layout:$("#o_layout").value, quality:n("#o_quality"),
+             mode:$("#o_mode").value, draft:$("#o_draft").value === "1"};
   if (n("#o_from") !== null) o.range_start = n("#o_from") * 60;
   if (n("#o_to") !== null) o.range_end = n("#o_to") * 60;
   return o;
@@ -1469,11 +1488,35 @@ function attach(list) {
 function canGo(A = att()) { return !A.busy && (A.files.length > 0 || A.links.some(l => l.state === "ok")); }
 
 /* one row style for everything: picture on the left, name and details, state on the right */
+const MODE_NAME = {stream: "Game or stream", podcast: "Podcast or talk"};
+const rowItem = id => { const A = att(); return A.links.find(x => x.id === id) || A.files.find(x => x.id === id); };
+function rowSummary(it) {
+  const o = it.o || {}, b = [];
+  if (o.mode) b.push(MODE_NAME[o.mode]);
+  if (o.max_clips) b.push(o.max_clips + (o.max_clips === 1 ? " clip" : " clips"));
+  if (o.min_len || o.max_len) b.push(`${o.min_len ?? "…"}–${o.max_len ?? "…"} s`);
+  if (o.draft === false) b.push("full quality at once");
+  return b.length ? `<span class="mini">Own settings: ${esc(b.join(" · "))}</span>` : "";
+}
+function rowOptsHtml(it, kind) {
+  const o = it.o || {}, cur = o.mode || $("#o_mode")?.value || "stream", num = (f, ph) => `<input type="number" data-ro="${it.id}" data-f="${f}" value="${o[f] ?? ""}" placeholder="${ph}" min="1" aria-label="${f}">`;
+  return `<div class="ropt" data-for="${it.id}">
+    <div><div class="ot">What kind of video is it?</div><div class="seg" role="group">
+      <button type="button" data-rseg="${it.id}" data-f="mode" data-v="stream" aria-pressed="${cur === "stream"}">Game or stream<small>Craziest moments</small></button>
+      <button type="button" data-rseg="${it.id}" data-f="mode" data-v="podcast" aria-pressed="${cur === "podcast"}">Podcast or talk<small>Most useful parts</small></button></div></div>
+    <div class="nums"><label>How many clips${num("max_clips", $("#o_max")?.value || "6")}</label><label>Shortest (s)${num("min_len", $("#o_min")?.value || "15")}</label><label>Longest (s)${num("max_len", $("#o_maxlen")?.value || "60")}</label></div>
+    ${kind === "link" ? `<div><div class="ot">First look</div><div class="seg" role="group">
+      <button type="button" data-rseg="${it.id}" data-f="draft" data-v="1" aria-pressed="${o.draft !== false}">Small first<small>Quick draft</small></button>
+      <button type="button" data-rseg="${it.id}" data-f="draft" data-v="0" aria-pressed="${o.draft === false}">Full quality<small>Slower</small></button></div></div>` : ""}
+    <p class="hint">These settings are only for this video. Empty boxes use the settings above.</p></div>`;
+}
 function rowHtml(A, {id, kind, thumb, len, title, sub, side, bar}) {
+  const it = rowItem(id) || {id};
   return `<div class="lp" data-row="${id}"><div class="th">${thumb}${len ? `<span class="du">${len}</span>` : ""}</div>
-    <div class="tx"><b title="${esc(title)}">${esc(title)}</b><span>${sub}</span></div>${side || ""}
+    <div class="tx"><b title="${esc(title)}">${esc(title)}</b><span>${sub}</span>${rowSummary(it)}</div>${side || ""}
+    ${A.busy ? "" : `<button type="button" class="opt ${it.open ? "on" : ""}" data-act="rowopts" data-id="${id}" aria-expanded="${!!it.open}" title="Settings for this video only">${ic("sliders")}Settings</button>`}
     ${A.busy ? "" : `<button type="button" class="rm" data-rm="${kind}" data-id="${id}" aria-label="Remove ${esc(title)}">${ic("x")}</button>`}
-    ${bar != null ? `<i class="pbar" style="width:${bar}%"></i>` : ""}</div>`;
+    ${bar != null ? `<i class="pbar" style="width:${bar}%"></i>` : ""}</div>${it.open && !A.busy ? rowOptsHtml(it, kind) : ""}`;
 }
 function drawAtt() {
   const box = $("#attIn"); if (!box) return;
@@ -1562,7 +1605,7 @@ document.addEventListener("click", e => {
 // and a piece that fails is simply sent again. The bar shows the whole file.
 async function sendBig(f, who) {
   const file = f.file;
-  const s = await send("/api/upload/start", {name: file.name, size: file.size, options: jobOptions(), creator: who});
+  const s = await send("/api/upload/start", {name: file.name, size: file.size, options: {...jobOptions(), ...(f.o || {})}, creator: who});
   const sent = new Array(s.parts).fill(0);
   const show = () => { f.pct = Math.min(99, Math.round(sent.reduce((a, b) => a + b, 0) / file.size * 100)); drawAtt(); };
   const put = i => new Promise((ok, fail) => {
@@ -1603,7 +1646,7 @@ function sendFile(f, who) {
   if (S.status.upload_part_mb && f.file.size > S.status.upload_part_mb * 1048576) return sendBig(f, who);
   return new Promise((ok, fail) => {
     const x = new XMLHttpRequest(), fd = new FormData();
-    fd.append("file", f.file); fd.append("options", JSON.stringify(jobOptions())); fd.append("creator", who);
+    fd.append("file", f.file); fd.append("options", JSON.stringify({...jobOptions(), ...(f.o || {})})); fd.append("creator", who);
     x.open("POST", "/api/upload");
     x.upload.onprogress = e => { if (e.lengthComputable) { f.pct = Math.round(e.loaded / e.total * 100); drawAtt(); } };
     x.onload = () => {
@@ -1636,7 +1679,7 @@ async function makeClips() {
   const who = targetCreator(), opts = jobOptions();
   for (const l of A.links.filter(x => x.state === "ok")) {
     l.sending = true; drawAtt();
-    try { await send("/api/jobs", {url: l.url, options: opts, creator: who}); l.state = "done"; started++; }
+    try { await send("/api/jobs", {url: l.url, options: {...opts, ...(l.o || {})}, creator: who}); l.state = "done"; started++; }
     catch (e) { l.state = "bad"; l.msg = e.message; failed++; }
     l.sending = false; drawAtt();
   }
@@ -1672,10 +1715,11 @@ function clipHtml(j, c) {
   const key = `c:${j.id}:${c.id}`, busyClip = c.status === "queued" || c.status === "rendering";
   return `<article class="clip ${sel().has(key) ? "picked" : ""}">
     <button class="shot" data-act="openclip" ${a} aria-label="Open clip: ${esc(c.title || c.hook)}">${body}
-      <span class="badge l ${scoreCls(c.score)}" title="AI score">${c.score || "Hand"}</span><span class="badge r">${fmt(c.end - c.start)}</span></button>
+      <span class="badge l ${scoreCls(c.score)}" title="AI score">${c.score || "Hand"}</span><span class="badge r">${fmt(c.end - c.start)}</span>${c.draft ? `<span class="badge draft" title="A quick small version. Make it in full quality when you are happy with it.">Draft</span>` : ""}</button>
     <div class="clip-body">
       <div class="hook">${esc(c.hook || "Untitled clip")}</div>
       <div class="ttl">${esc(c.title)}</div>
+      ${c.draft && c.error ? `<div class="sub" style="color:var(--bad)">${esc(c.error)}</div>` : ""}
       ${postPills(c) ? `<div class="row" style="gap:4px">${postPills(c)}</div>` : ""}
       <div class="clip-foot">
         ${busyClip ? "" : `<label class="selck" title="Select this clip"><input type="checkbox" data-sel="${key}" ${sel().has(key) ? "checked" : ""} aria-label="Select this clip"></label>`}
@@ -1684,7 +1728,8 @@ function clipHtml(j, c) {
         ${c.can_undo && !busyClip ? `<button class="btn sm ghost" data-act="undoclip" ${a} title="Go back to the version before your last edit">Undo edit</button>` : ""}
         ${busyClip ? "" : `<button class="btn sm icon ghost" data-act="delclip" ${a} title="Delete this clip" aria-label="Delete this clip">${ic("trash")}</button>`}
         <span class="grow"></span>
-        ${c.status === "done" ? `<button class="btn sm" data-act="openclip" ${a}>${ic("send")}Post</button>` : ""}
+        ${c.status === "done" && c.draft ? `<button class="btn sm" data-act="clipfinal" ${a} title="Fetch this part of the video in ${j.options?.quality || 720}p and make the clip again">${ic("up")}Make ${j.options?.quality || 720}p</button>` : ""}
+        ${c.status === "done" && !c.draft ? `<button class="btn sm" data-act="openclip" ${a}>${ic("send")}Post</button>` : ""}
       </div>
     </div></article>`;
 }
@@ -1725,6 +1770,8 @@ function jobHtml(j) {
   const pic = j.thumb ? `<img src="/media/${esc(j.id)}/thumb.jpg" alt="" loading="lazy">` : ic(j.source?.type === "file" ? "film" : "link");
   return `<div class="job-head"><div class="jt"><span class="jthumb">${pic}${j.duration ? `<span class="du">${fmt(j.duration)}</span>` : ""}</span><div style="min-width:0"><h3>${esc(j.title || j.source.name)}</h3><p class="sub">${meta}</p></div></div>
       <div class="row" style="flex-wrap:nowrap;gap:4px">${busy && j.kind !== "live" ? `<button class="btn sm" data-act="stopjob" data-j="${j.id}" title="Stop this video">Stop</button>` : busy ? "" : `
+        ${j.clips.some(c => c.draft && c.status === "done") ? `<button class="btn sm" data-act="finalall" data-j="${j.id}" title="Fetch the video in ${j.options?.quality || 720}p and make every draft clip again">${ic("up")}Make all ${j.options?.quality || 720}p</button>` : ""}
+        ${j.source?.type === "url" && j.kind !== "live" ? `<button class="btn sm ghost" data-act="again" data-j="${j.id}" title="Put this link back in the box with settings to change">Make again…</button>` : ""}
         ${j.clips.some(c => c.status === "done") ? `<button class="btn sm icon ghost" data-act="dlall" data-j="${j.id}" title="Download all clips of this video" aria-label="Download all clips of this video">${ic("down")}</button>` : ""}
         <button class="btn sm icon ghost" data-act="deljob" data-j="${j.id}" title="Delete" aria-label="Delete this video and its clips">${ic("trash")}</button>
         <label class="selck" title="Select this video and its clips"><input type="checkbox" data-sel="j:${j.id}" ${sel().has("j:" + j.id) ? "checked" : ""} aria-label="Select this video"></label>`}</div></div>
@@ -1847,6 +1894,7 @@ function drawCreatorForm() {
     <div class="card"><h2>Clips</h2><p class="help">How this creator's clips look.</p>
       <div class="fields"><label class="f">Caption style<select data-k="style">${opts(S.status.styles, c.style)}</select></label>
         <label class="f">Layout<select data-k="layout">${opts(S.status.layouts, c.layout)}</select></label>
+        <label class="f">Kind of video<select data-k="mode">${opts({stream:"Game or stream: craziest moments", podcast:"Podcast or talk: most useful parts"}, c.mode || "stream")}</select></label>
         <label class="f">Shortest clip (seconds)<input data-k="min_len" type="number" value="${c.min_len}"></label>
         <label class="f">Longest clip (seconds)<input data-k="max_len" type="number" value="${c.max_len}"></label>
         <label class="f">Clips per video<input data-k="max_clips" type="number" value="${c.max_clips}"></label>
@@ -2237,6 +2285,12 @@ document.addEventListener("dragover", e => { const a = $(".composer"); if (a) { 
 document.addEventListener("dragleave", () => $(".composer")?.classList.remove("over"));
 document.addEventListener("drop", e => { const a = $(".composer"); if (a) { e.preventDefault(); a.classList.remove("over"); attach(e.dataTransfer.files); } });
 document.addEventListener("change", async e => {
+  if (e.target.dataset?.ro) {
+    const it = rowItem(e.target.dataset.ro), f = e.target.dataset.f; if (!it) return;
+    const v = e.target.value === "" ? null : Number(e.target.value); it.o ||= {};
+    if (v === null || !isFinite(v)) delete it.o[f]; else it.o[f] = f === "max_clips" ? Math.max(1, Math.min(20, Math.round(v))) : Math.max(5, Math.min(180, Math.round(v)));
+    drawAtt(); return;
+  }
   const t = e.target;
   if (t.id === "pool_privacy") { try { await send("/api/pool/privacy", {mode: t.value}, "PUT"); toast("Privacy setting saved.", "ok"); await drawSettings(); } catch (err) { toast(err.message, "bad"); } return; }
   if (t.id === "ai_provider") { $("#ai_models").innerHTML = ""; if (S.ai && t.value !== S.ai.provider) { $("#ai_model").value = ""; $("#ai_base").value = ""; } return aiHints(); }
@@ -2325,6 +2379,22 @@ document.addEventListener("click", async e => {
     }
     if (a === "extcopy") { try { await navigator.clipboard.writeText($("#ext_token").value); toast("Copied.", "ok"); } catch { $("#ext_token").select(); toast("Press Ctrl+C to copy.", "ok"); } return; }
     if (a === "extreset") { if (!(await ask("Make a new key?", "The extension stops working until you paste the new key into it.", "Make new key"))) return; await send("/api/ext/token/reset", {}); await drawSettings(); return toast("New key made.", "ok"); }
+    if (a === "rowopts") { const it = rowItem(d.id); if (it) { it.open = !it.open; drawAtt(); } return; }
+    if (a === "clipfinal" || a === "finalall") {
+      b.disabled = true;
+      try { await send(`/api/jobs/${d.j}/final`, a === "clipfinal" ? {clips: [d.c]} : {}); toast("Fetching the full-quality video for " + (a === "clipfinal" ? "this clip" : "your draft clips") + ".", "ok"); }
+      catch (e) { b.disabled = false; throw e; }
+      return tick();
+    }
+    if (a === "again") {
+      const j = S.jobs.find(x => x.id === d.j); if (!j || !j.source?.url) return;
+      const A = att(); if (A.links.some(l => l.url === j.source.url)) { toast("That link is already in the box.", "bad"); return; }
+      if (batchUsed(A) >= batchMax()) { toast("The box is full. Start those first.", "bad"); return; }
+      const id = newId();
+      A.links.push({id, url: j.source.url, state: "ok", info: {title: j.title || j.source.url, uploader: j.uploader, duration: j.duration, thumb: j.thumb ? `/media/${j.id}/thumb.jpg` : "", is_live: false},
+                    o: {mode: j.options?.mode, max_clips: j.options?.max_clips, min_len: j.options?.min_len, max_len: j.options?.max_len}, open: true});
+      drawAtt(); $("#add")?.scrollIntoView({behavior: "smooth", block: "center"}); toast("The link is in the box. Change its settings, then press Make clips.", "ok"); return;
+    }
     if (a === "undoclip") { await send(`/api/jobs/${d.j}/clips/${d.c}/undo`); toast("Went back to the earlier version.", "ok"); return tick(); }
     if (a === "stopjob") { if (!(await ask("Stop this video?", "Clips already made are kept. A clip being cut right now is finished first.", "Stop it", true))) return; await send(`/api/jobs/${d.j}/cancel`); toast("Stopping.", "ok"); return tick(); }
     if (a === "menu") return $("#app").classList.toggle("open");

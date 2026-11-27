@@ -70,6 +70,7 @@ def main() -> int:
                 ("answer cache, clip fingerprint, safe output files, stop and supervisor", ["tests/test_pipeline.py"]),
                 ("free-pool settings page routes, consent gate and key-save check", ["tests/test_pool_settings.py"]),
                 ("log file and finding the models that really work", ["tests/test_discover.py"]),
+                ("podcast and stream prompts, trace files, draft then full quality", ["tests/test_draft.py"]),
                 ("the pack tool (split into small zips, join and check)", ["tests/test_claude_pack.py"]),
                 ("finding a Python that fits and building the virtual environment", ["tests/test_pyenv.py"]),
                 ("the fork's licence, names, version file and update source", ["tests/test_fork.py"])]

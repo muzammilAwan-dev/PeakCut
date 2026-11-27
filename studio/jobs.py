@@ -11,7 +11,7 @@ import traceback
 import uuid
 from pathlib import Path
 
-from . import applog, brain, config, creators, ctx, load, media, render, roman, safe, transcribe, usage
+from . import applog, brain, config, creators, trace, ctx, load, media, render, roman, safe, transcribe, usage
 
 class _FairQueue:
     """Whose video is next. Each person has their own line and the lines take turns, so someone who adds ten
@@ -108,7 +108,8 @@ _lock = threading.RLock()
 on_clip_ready: list = []   # callbacks (job, clip), run once when a clip first finishes
 
 DEFAULTS = {"max_clips": 6, "min_len": 15, "max_len": 60, "style": "bounce", "layout": "blur", "quality": 720,
-            "range_start": None, "range_end": None}
+            "mode": "stream", "draft": True, "range_start": None, "range_end": None}
+DRAFT_HEIGHT = 480      # the first look at a link-based video is downloaded this small; the clips you keep are fetched again at "quality"
 
 
 LIMITS = {"max_clips": (1, 20), "min_len": (5, 120), "max_len": (10, 180), "quality": (360, 1080)}
@@ -123,6 +124,10 @@ def clean_options(options) -> dict:
         if k in LIMITS:
             lo, hi = LIMITS[k]
             v = max(lo, min(hi, int(float(v))))
+        elif k == "mode":
+            v = brain.mode_of(v)
+        elif k == "draft":
+            v = v is True or str(v).strip().lower() in ("1", "true", "yes", "on")
         elif k == "style":
             v = v if v in render.STYLES else DEFAULTS["style"]
         elif k == "layout":
@@ -350,7 +355,7 @@ def create(source: dict, options: dict, enqueue=True, creator=None, kind="video"
     c = creators.get(creator) if creator else None
     if c:
         d = creators.root(c["id"]) / ("live" if kind == "live" else "videos") / jid
-        base = {**DEFAULTS, **{k: c[k] for k in ("max_clips", "min_len", "max_len", "style", "layout")}}
+        base = {**DEFAULTS, **{k: c[k] for k in ("max_clips", "min_len", "max_len", "style", "layout", "mode") if k in c}}
     else:
         d, base, creator = config.user_dir(ctx.uid()) / "jobs" / jid, dict(DEFAULTS), None
     d.mkdir(parents=True)
@@ -467,8 +472,64 @@ def request_render(jid, cid, changes: dict):
     _q.put(("clip", jid, cid))
 
 
+def _height(job) -> int:
+    """How tall to download: small for the first look (draft), the chosen quality otherwise."""
+    return DRAFT_HEIGHT if job.get("draft") else int(job["options"]["quality"])
+
+
+def request_final(jid, cids=None):
+    """Make the draft clips again from a full-quality download. `cids` None means every draft clip that is ready."""
+    job = _jobs[jid]
+    if job["status"] in ("queued", "running"):
+        raise ValueError("Wait until the video has finished.")
+    todo = [c for c in job["clips"] if c.get("draft") and c.get("status") == "done" and (cids is None or c["id"] in cids)]
+    if not todo:
+        raise ValueError("There is nothing to make in full quality.")
+    for c in todo:
+        c["status"] = "queued"
+    save(job)
+    for c in todo:
+        _q.put(("final", jid, c["id"]))
+    applog.log("job.final", job=jid[:12], clips=len(todo), quality=int(job["options"]["quality"]))
+    return todo
+
+
+def finalize_clip(job, clip):
+    """Fetch just this clip's stretch of the video at the chosen quality and find exactly where it starts, by matching its sound
+    against the draft we already have. If it fails, the draft stays as it was and the clip says why."""
+    d = Path(job["dir"])
+    trace.use(d)
+    clip["status"] = "rendering"
+    save(job)
+    q = int(job["options"]["quality"])
+    try:
+        draft_src = Path(clip["src"]) if clip.get("src") else Path(job["source_path"])
+        off = float(clip.get("src_offset", 0.0))
+        want = max(0.0, clip["start"] - PAD)
+        end = min(job["duration"], clip["end"] + PAD) if job.get("duration") else clip["end"] + PAD
+        piece = media.download_section(job["source"]["url"], d / "clips", f"{clip['id']}.hd", want, end, q)
+        part = media.audio_window(piece, 0, min(120.0, end - want + 5))
+        ref_start = max(0.0, want - off - 25.0)
+        ref = media.audio_window(draft_src, ref_start, (end - want) + 70.0)
+        found = media.find_offset(ref, part, want - off - ref_start)
+        meta = media.probe(piece)
+        start_abs = off + ref_start + found
+        old = Path(clip["src"]) if clip.get("src") else None
+        clip.update(src=str(piece), src_offset=round(start_abs, 2), src_end=round(start_abs + meta["duration"], 2),
+                    w=meta["width"], h=meta["height"], draft=False, quality=meta["height"])
+        clip["start"], clip["end"] = max(clip["start"], clip["src_offset"]), min(clip["end"], clip["src_end"])
+        if old and old != piece:
+            old.unlink(missing_ok=True)
+        applog.log("job.final.piece", job=str(job["id"])[:12], clip=clip["id"], height=meta["height"], offset=round(start_abs - want, 2))
+    except Exception as e:  # noqa: BLE001
+        clip.update(status="done", error=f"Could not fetch the full-quality video for this clip: {safe.friendly(e, 250)}")
+        applog.error("job.final.failed", e, job=str(job["id"])[:12], clip=clip["id"])
+    save(job)
+
+
 def render_one(job, clip, words):
     d = Path(job["dir"])
+    trace.use(d)
     clip["status"] = "rendering"
     save(job)
     try:
@@ -477,6 +538,7 @@ def render_one(job, clip, words):
         if not clip.get("src"):
             clip["end"] = min(clip["end"], job["duration"])
         local = dict(clip, start=clip["start"] - off, end=clip["end"] - off, hook=roman.to_roman(clip.get("hook") or ""))
+        cw, ch = clip.get("w") or job["width"], clip.get("h") or job["height"]       # a clip made in full quality can be bigger than the draft
         span = [round(clip["start"], 2), round(clip["end"], 2), "en2"]      # "en2": captions made always-English
         if clip.get("fixed_for") == span and clip.get("fixed_words") and not any(
                 roman.needs_roman(w.get("w", "")) for w in clip["fixed_words"]):
@@ -492,19 +554,20 @@ def render_one(job, clip, words):
                 pass
         # the last word on it: whatever was said, nothing is drawn in Hindi or Urdu script
         near = [dict(w, s=w["s"] - off, e=w["e"] - off) for w in roman.words(raw)]
-        rev = render.revision(src, local, near, job["width"], job["height"])
+        rev = render.revision(src, local, near, cw, ch)
         made = d / "clips" / f"{clip['id']}.mp4"
         if clip.get("rev") == rev and made.is_file() and (d / "clips" / f"{clip['id']}.jpg").is_file():
             clip.update(status="done", error=None)            # nothing that shapes this clip changed: the file is already right
             save(job)
             return
         _check(job)
-        out = render.render_clip(src, d / "clips", clip["id"], local, near, job["width"], job["height"])
+        out = render.render_clip(src, d / "clips", clip["id"], local, near, cw, ch)
         clip.update(out, status="done", version=clip.get("version", 0) + 1, error=None, rev=rev)
         post = {k: clip[k] for k in ("title", "description", "hashtags", "hook", "start", "end", "score")}
         (d / "clips" / f"{clip['id']}.json").write_text(json.dumps(post, indent=1), encoding="utf-8")
         if clip["version"] == 1:
             clip.setdefault("made_at", time.time())
+        if clip["version"] == 1 and not clip.get("draft"):          # a draft is not posted anywhere until it is made in full quality
             creators.log(job["creator"], f"Clip ready (score {clip['score']}): {clip['title'] or clip['hook']}")
             save(job)
             for fn in on_clip_ready:
@@ -545,7 +608,7 @@ def _fetch_piece(job, clip, full_audio):
     try:
         want = max(0.0, clip["start"] - PAD)
         piece = media.download_section(job["source"]["url"], d / "clips", f"{clip['id']}.src", want,
-                                       min(job["duration"], clip["end"] + PAD), int(o["quality"]))
+                                       min(job["duration"], clip["end"] + PAD), _height(job))
         wav = d / "clips" / f"{clip['id']}.wav"
         media.extract_audio(piece, wav)
         part = media.load_audio(wav)
@@ -581,6 +644,9 @@ def _run_job(job):
     t0 = time.time()
     notes = []
     usage.set_context(job["creator"], job["title"] or src.get("name"))
+    trace.use(d)
+    if "draft" not in job:      # decided once, so a restart carries on the same way
+        job["draft"] = bool(o.get("draft")) and src["type"] == "url" and int(o["quality"]) > DRAFT_HEIGHT
     resuming = bool(job.pop("resume", False)) and (d / "words.json").is_file()
     if resuming:   # after a restart: keep the transcript parts, clips and AI answers already made, and carry on
         _set(job, status="running", stage="Picking up where it stopped", error=None)
@@ -604,7 +670,7 @@ def _run_job(job):
         span = (o["range_end"] or meta["duration"]) - (o["range_start"] or 0)
         pieces = span > LONG_VIDEO or meta["duration"] <= 0
         if not pieces:  # shorter video: fetch all of it in the background while the audio is worked on
-            video = fetch.submit(media.download, src["url"], d, int(o["quality"]))
+            video = fetch.submit(media.download, src["url"], d, _height(job))
         audio_file = media.download_audio(src["url"], d, lambda p: _set(job, progress=0.03 + 0.1 * p))
     else:
         pieces, audio_file = False, Path(src["path"])
@@ -639,7 +705,7 @@ def _run_job(job):
                 except Exception as e:  # noqa: BLE001 - sites sometimes refuse a download
                     notes.append(f"Video download refused once ({str(e)[-80:]}), retrying")
                     try:
-                        path = media.download(src["url"], d, int(o["quality"]))
+                        path = media.download(src["url"], d, _height(job))
                     except Exception as e2:  # noqa: BLE001
                         notes.append(f"Whole-video download failed ({str(e2)[-80:]}), fetching clip parts instead")
                 if path:
@@ -734,6 +800,9 @@ def _run_job(job):
         prior = [w for w in words if shift - BLOCK_LEAD <= w["s"] < shift] if bi > 0 else []
         words += [dict(w, s=round(w["s"] + shift, 2), e=round(w["e"] + shift, 2)) for w in bw]
         (d / "words.json").write_text(json.dumps(words), encoding="utf-8")
+        trace.transcript(words, {"video": job.get("title"), "link": src.get("url") or src.get("name"), "length_seconds": round(job.get("duration") or 0),
+                                 "words_from": "YouTube's own captions" if yt else "ViralCut's speech model", "language": job.get("lang") or "",
+                                 "heard_up_to_seconds": round((b) / 16000)})
         _set(job, stage="Finding the best moments" + where, word_count=len(words))
         left = int(o["max_clips"]) - len(job["clips"])
         if left <= 0 or len(bw) < 8:
@@ -745,7 +814,7 @@ def _run_job(job):
         read, base = with_lead(prior, bw, shift, min(BLOCK_LEAD, s0))
         back = int(shift - base)
         found, ai = brain.find_clips(read, db[max(0, s0 - back): s0 + int((b - a) / 16000) + 1], (b - a) / 16000 + back, job["title"],
-                                     job["uploader"], quota, int(o["min_len"]), int(o["max_len"]), notes.append)
+                                     job["uploader"], quota, int(o["min_len"]), int(o["max_len"]), notes.append, mode=o.get("mode", "stream"))
         tokens += ai.get("tokens", 0)
         model = ai.get("model") or model
         if ai.get("note"):
@@ -754,7 +823,7 @@ def _run_job(job):
             c.update(start=round(c["start"] + base, 2), end=round(c["end"] + base, 2))
             if brain._overlaps(c["start"], c["end"], job["clips"]):
                 continue                  # the lead-in found a moment the part before already has
-            c.update(id=f"clip{len(job['clips']) + 1:02d}", style=o["style"], layout=o["layout"], status="queued", version=0)
+            c.update(id=f"clip{len(job['clips']) + 1:02d}", style=o["style"], layout=o["layout"], status="queued", version=0, draft=bool(job.get("draft")))
             job["clips"].append(c)
             futures.append(renders.submit(ctx.bind(make), c, list(words)))
         job["ai"] = {"model": model, "tokens": tokens, "note": "", "log": notes[-5:]}
@@ -814,7 +883,18 @@ def _worker(quick_only=False):
             else:
                 words = json.loads((Path(job["dir"]) / "words.json").read_text(encoding="utf-8"))
                 clip = next(c for c in job["clips"] if c["id"] == cid)
-                render_one(job, clip, words)
+                if kind == "final":
+                    finalize_clip(job, clip)
+                if kind == "final" and clip.get("draft"):
+                    pass                                     # the full-quality fetch failed: the draft stays, with the reason on it
+                elif clip.get("status") != "error":
+                    render_one(job, clip, words)
+                    if kind == "final" and clip.get("status") == "done" and not clip.get("draft"):
+                        for fn in on_clip_ready:         # now it is the real clip: let posting and the like see it
+                            try:
+                                fn(job, clip)
+                            except Exception:  # noqa: BLE001
+                                traceback.print_exc()
         except Exception as e:  # noqa: BLE001
             stopped = isinstance(e, Cancelled)
             if not stopped:

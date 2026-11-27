@@ -60,6 +60,9 @@ your AI service, paste your key and press **Save and test** (see [Choose your AI
 - **Free AI pool:** Settings, **Free AI pool**. Paste free keys, press **Test**, and clips keep being found when one service runs out. Nothing is sent online until you tick the consent box. With no AI at all it falls back to speech and loudness.
 - **Find working models:** on each service press **Find working models**. It lists the models, tries the best few with one tiny request each, marks the ones that answer as **Preferred**, and the pool uses only those.
 - **Activity log:** `data/logs/viralcut.log` records start-ups, requests, AI status codes and errors (never keys or your video text). Show or download it in Settings, Free AI pool. `VIRALCUT_LOG_LEVEL=debug` adds more detail.
+- **Kind of video:** choose *Game or stream* (the craziest moments) or *Podcast or talk* (the most useful, shareable parts). Each pasted video also has its own **Settings** button, and **Make again…** on a finished link puts it back in the box.
+- **Small first, then full quality:** a link is first fetched small (480p) so the clips appear quickly. Press **Make 720p/1080p** on the clips you like (or **Make all**); only those parts are downloaded again in full quality. Switch this off under Options, *Links: first look*.
+- **Trace files:** `trace/transcript.txt` and `trace/ai-*.txt` inside each video's folder show what was heard and exactly what the AI was asked and answered. Set `PEAKCUT_TRACE=0` to switch off.
 - **Stop and Undo:** a running video can be stopped; each clip keeps one previous version you can bring back.
 - **Follow the face (optional):** `pip install -r requirements-optional.txt` adds a crop that follows the speaker. Without it the layout is simply not offered.
 - **Browser extension:** `extension/` (see its README) sends the page you are on to ViralCut. Settings, **Browser extension** shows the pairing key.
