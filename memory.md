@@ -1,4 +1,4 @@
-# memory.md (rev 15, 2026-11-27, current state only)
+# memory.md (rev 16, 2026-11-27, current state only)
 
 ## Project
 - Fork `muzammilAwan-dev/PeakCut` (company Amfaiz), branch `develop` only. Product name: **ViralCut** (repo name unchanged).
@@ -40,6 +40,8 @@
 - rev14 (S9): `studio/applog.py` log file `data/logs/viralcut.log`; `Pool.discover` + `/api/pool/discover` + button "Find working models" (ranks, tests best 6, pool uses only working); `/api/log`, `/api/log/download`; Settings shows log. Owner asked for it after Gemini 404.
 
 - rev15 (S10): `studio/trace.py` (trace/ per video); option `mode` stream|podcast (brain.build_prompt); per-row Settings + Make again in the composer; draft (480p) then `/api/jobs/{id}/final` (jobs.request_final/finalize_clip, media.audio_window). UNVERIFIED: yt-dlp `download_range` on real YouTube at 720/1080 after a 480p draft; offsets found by sound matching only tested with a fake cut.
+
+- rev16: `media.youtube_words(url, covers)` tries manual captions then auto then own model; `transcript_from` = youtube-manual|youtube-auto|own. UNVERIFIED on real YouTube (json3 for manual tracks assumed).
 
 ## Next
 - Owner applies rev12, re-runs windows-baseline.bat, then continues `docs/RELEASE_TEST.md` from step 4.

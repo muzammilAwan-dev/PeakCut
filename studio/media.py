@@ -124,23 +124,43 @@ def info(url: str) -> dict:
             "thumbnail": i.get("thumbnail") or "", "kind": i.get("_type") or "video"}
 
 
-def youtube_words(url: str):
-    """YouTube's own transcript of a video, word by word: ([{'w', 's', 'e'}, ...], language), or None if the video
-    has none. Only the transcript in the language that was spoken is used, never a translation."""
+def youtube_words(url: str, covers=None):
+    """YouTube's own transcript of a video, word by word: ([{'w', 's', 'e'}, ...], language, kind), or None.
+    Tried in this order, always in the language that was spoken, never a translation:
+      1. captions a person uploaded ("manual": best spelling and punctuation; timed per line, so the words in a line are spread evenly)
+      2. YouTube's own speech-to-text captions ("auto": timed per word)
+    `covers(words)` says whether a candidate is good enough (reaches the end, enough talking); a weak one is skipped and the
+    next is tried. None means: write the transcript ourselves. `kind` is "manual" or "auto"."""
     if not is_youtube(url):
         return None
     import json
     with _youtube_guard(url), _ydl({}) as ydl:
         i = ydl.extract_info(url, download=False)
         auto = i.get("automatic_captions") or {}
+        manual = i.get("subtitles") or {}
         key = next((k for k in auto if k.endswith("-orig")), None)
+        spoken = (key.replace("-orig", "") if key else (i.get("language") or "")) or ""
         if not key and i.get("language") in auto:
             key = i["language"]
-        track = next((f for f in auto.get(key) or [] if f.get("ext") == "json3" and f.get("url")), None) if key else None
-        if not track:
-            return None
-        raw = ydl.urlopen(track["url"]).read(40_000_000)
-    return _caption_words(json.loads(raw)), key.replace("-orig", "")
+        base = spoken.split("-")[0].lower()
+        tries = []
+        if base:    # without knowing the spoken language, a person's captions could be a translation: not used
+            mk = sorted((k for k in manual if k.split("-")[0].lower() == base), key=lambda k: (k.lower() != spoken.lower(), len(k)))
+            if mk:
+                tries.append(("manual", mk[0], manual[mk[0]]))
+        if key:
+            tries.append(("auto", key, auto[key]))
+        for kind, k, formats in tries:
+            track = next((f for f in formats or [] if f.get("ext") == "json3" and f.get("url")), None)
+            if not track:
+                continue
+            try:
+                words = _caption_words(json.loads(ydl.urlopen(track["url"]).read(40_000_000)))
+            except Exception:  # noqa: BLE001 - this kind would not download: try the next
+                continue
+            if words and (covers is None or covers(words)):
+                return words, k.replace("-orig", ""), kind
+    return None
 
 
 def youtube_english_words(url: str):

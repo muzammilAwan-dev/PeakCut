@@ -118,6 +118,43 @@ check("a failed full-quality fetch leaves the draft, with a reason", (c2["draft"
 up = jobs.create({"type": "file", "path": str(lo), "name": "a.mp4"}, {}, enqueue=False)
 check("the draft option only matters for links (a file is already on this computer)", up["options"]["draft"], True)
 
+# ---------------------------------------------------------------- YouTube captions: a person's first, then YouTube's own, then ours
+import contextlib
+def ev(lines):    # json3 with whole lines (no word times), one per 5 seconds
+    return json.dumps({"events": [{"tStartMs": i * 5000, "dDurationMs": 5000, "segs": [{"utf8": t}]} for i, t in enumerate(lines)]}).encode()
+MANUAL = ev(["Hello there, this is a clean line."] * 12)
+AUTO = json.dumps({"events": [{"tStartMs": i * 1000, "segs": [{"utf8": "hello", "tOffsetMs": 0}, {"utf8": " world", "tOffsetMs": 400}]} for i in range(60)]}).encode()
+class FakeYDL:
+    def __init__(self, info, files): self.i, self.f = info, files
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def extract_info(self, url, download=False): return self.i
+    def urlopen(self, u):
+        if self.f.get(u) is None: raise OSError("refused")
+        import io; return io.BytesIO(self.f[u])
+def fmt(u): return [{"ext": "json3", "url": u}]
+def setup_yt(info, files):
+    media._ydl = lambda opts: FakeYDL(info, files); media._youtube_guard = lambda url: contextlib.nullcontext()
+URL = "https://youtu.be/abcdefghijk"
+both = {"language": "en", "subtitles": {"en": fmt("m"), "de": fmt("g")}, "automatic_captions": {"en-orig": fmt("a"), "en": fmt("a2")}}
+setup_yt(both, {"m": MANUAL, "a": AUTO})
+r = media.youtube_words(URL)
+check("a person's captions are used first", (r[2], r[1], len(r[0])), ("manual", "en", 84))
+r = media.youtube_words(URL, covers=lambda w: len(w) > 100)
+check("when they are too thin, YouTube's own captions are tried", (r[2], len(r[0])), ("auto", 120))
+check("when neither is good enough there is nothing to borrow", media.youtube_words(URL, covers=lambda w: False), None)
+setup_yt(both, {"m": None, "a": AUTO})
+check("captions that will not download are skipped", media.youtube_words(URL)[2], "auto")
+setup_yt({"language": "en", "subtitles": {"de": fmt("g")}, "automatic_captions": {"en-orig": fmt("a")}}, {"g": MANUAL, "a": AUTO})
+check("a translation (another language) is never used", media.youtube_words(URL)[2], "auto")
+setup_yt({"subtitles": {"en": fmt("m")}, "automatic_captions": {}}, {"m": MANUAL})
+check("with the spoken language unknown, a person's captions are not trusted (could be a translation)", media.youtube_words(URL), None)
+setup_yt({"language": "hi", "subtitles": {"hi": fmt("m")}, "automatic_captions": {}}, {"m": MANUAL})
+check("a language with only a person's captions works", media.youtube_words(URL)[1:3] if media.youtube_words(URL) else None, ("hi", "manual"))
+setup_yt({"language": "en", "subtitles": {}, "automatic_captions": {}}, {})
+check("a video with no captions at all: our own model", media.youtube_words(URL), None)
+check("other sites never ask YouTube", media.youtube_words("https://www.twitch.tv/videos/123456789"), None)
+
 ctx._uid.reset(token)
 print("ALL PASSED" if not fails else f"{len(fails)} failed: {fails}")
 sys.exit(1 if fails else 0)

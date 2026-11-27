@@ -743,12 +743,11 @@ def _run_job(job):
     yt = None
     if src["type"] == "url" and config.YT_TRANSCRIPT and media.is_youtube(src["url"]):
         try:
-            yt = media.youtube_words(src["url"])
+            yt = media.youtube_words(src["url"], lambda w: _covers(w, lo / 16000, hi / 16000))
         except Exception:  # noqa: BLE001 - no transcript to borrow: ours is written as usual
             yt = None
-        if yt and not _covers(yt[0], lo / 16000, hi / 16000):
-            yt = None
-        job["transcript_from"] = "youtube" if yt else "own"
+        job["transcript_from"] = f"youtube-{yt[2]}" if yt else "own"
+        applog.log("job.transcript", job=str(job.get("id", ""))[:12], source=job["transcript_from"], language=yt[1] if yt else "", words=len(yt[0]) if yt else 0)
         job["lang"] = yt[1] if yt else ""          # the language spoken, when YouTube says (decides the captions)
     if resuming:
         try:
@@ -801,7 +800,7 @@ def _run_job(job):
         words += [dict(w, s=round(w["s"] + shift, 2), e=round(w["e"] + shift, 2)) for w in bw]
         (d / "words.json").write_text(json.dumps(words), encoding="utf-8")
         trace.transcript(words, {"video": job.get("title"), "link": src.get("url") or src.get("name"), "length_seconds": round(job.get("duration") or 0),
-                                 "words_from": "YouTube's own captions" if yt else "ViralCut's speech model", "language": job.get("lang") or "",
+                                 "words_from": {"youtube-manual": "captions uploaded by the video's owner (YouTube)", "youtube-auto": "YouTube's automatic captions"}.get(job.get("transcript_from"), "ViralCut's speech model"), "language": job.get("lang") or "",
                                  "heard_up_to_seconds": round((b) / 16000)})
         _set(job, stage="Finding the best moments" + where, word_count=len(words))
         left = int(o["max_clips"]) - len(job["clips"])
