@@ -6,8 +6,10 @@ import hashlib
 import hmac
 import json
 import os
+import platform
 import re
 import shutil
+import sys
 import threading
 import time
 from pathlib import Path
@@ -21,8 +23,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 
 from . import admin as admins
 from . import account, load
-from . import (accounts, ai, alerts, auth, config, creators, ctx, db, exttoken, jobs, live, media, pool, posting,
-               profiles, render, safe, transcribe, usage)
+from . import (accounts, ai, alerts, applog, auth, config, creators, ctx, db, exttoken, jobs, live, media, pool, posting,
+               profiles, render, safe, transcribe, updates, usage)
 
 app = FastAPI(title="ViralCut", docs_url=None, redoc_url=None, openapi_url=None)
 WEB = config.ROOT / "web"
@@ -47,6 +49,10 @@ async def _more_threads():
 
 @app.on_event("startup")
 def _startup():
+    applog.setup()
+    applog.log("server.start", version=(updates.current() or "unknown")[:12], python=sys.version.split()[0], system=platform.platform(), data=str(config.DATA_DIR),
+               url=config.PUBLIC_URL, accounts=config.ACCOUNTS, log_level=applog.level(), cpus=os.cpu_count(),
+               ffmpeg=shutil.which("ffmpeg") or "not found", ai_provider=ai.provider(), pool_consent=pool.get().settings.consent())
     db.init()
     for f in (config.TMP_DIR / "uploads").glob("*"):      # uploads cut short by a restart
         try:
@@ -59,6 +65,7 @@ def _startup():
     jobs.start()
     live.start()
     posting.start()
+    applog.log("server.ready", boot=BOOT, services=",".join(f"{x['id']}:{'ready' if x['usable'] else 'not ready'}" for x in pool.get().status()))
 
 
 # ================================================================ the gate: who is asking, and are they allowed
@@ -213,6 +220,38 @@ class Compress:
 
 
 app.add_middleware(Compress)
+
+
+class AccessLog:
+    """One log line per web request: method, path, status, time. Never the query string or the body (they can hold keys)."""
+    QUIET = ("/api/sync", "/healthz", "/brand/", "/assets/", "/media/", "/favicon.ico")
+
+    def __init__(self, app):
+        self.inner = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.inner(scope, receive, send)
+        path, t0, seen = scope.get("path", ""), time.time(), {}
+
+        async def spy(message):
+            if message["type"] == "http.response.start":
+                seen["status"] = message["status"]
+            await send(message)
+        try:
+            await self.inner(scope, receive, spy)
+        except Exception as e:  # noqa: BLE001
+            applog.error("request.crash", e, method=scope.get("method"), path=path)
+            raise
+        status = seen.get("status", 0)
+        if applog.level() == "debug" or status >= 400 or not path.startswith(self.QUIET):
+            if not (path.startswith(self.QUIET) and status < 400):
+                client = scope.get("client") or ("", 0)
+                applog.log("request", "warning" if status >= 500 else "info", method=scope.get("method"), path=path, status=status,
+                           ms=int((time.time() - t0) * 1000), ip=client[0])
+
+
+app.add_middleware(AccessLog)
 
 
 # Cloudflare's published address ranges (cloudflare.com/ips). PEAKCUT_CDN_RANGES replaces them if they ever change.
@@ -1377,6 +1416,34 @@ def pool_probe(request: Request, body: dict = Body(...)):
         raise HTTPException(400, str(e))
     ctx.bump()
     return {"probe": r, **_pool_view()}
+
+
+@app.post("/api/pool/discover")
+def pool_discover(request: Request, body: dict = Body(...)):
+    """Find which of the service's models really answer (a few tiny requests, only when the owner presses the button)."""
+    _admin(request)
+    _throttle("pooldiscover:" + ctx.uid(), 12, 600)
+    try:
+        r = pool.get().discover(body.get("provider"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    ctx.bump()
+    return {"discover": r, **_pool_view()}
+
+
+@app.get("/api/log")
+def log_tail(request: Request, lines: int = 300):
+    _admin(request)
+    return {"path": str(applog.path()), "level": applog.level(), "text": applog.tail(lines)}
+
+
+@app.get("/api/log/download")
+def log_download(request: Request):
+    _admin(request)
+    p = applog.path()
+    if not p.exists():
+        raise HTTPException(404)
+    return FileResponse(p, media_type="text/plain", filename="viralcut.log")
 
 
 # ---------------------------------------------------------------- the browser extension ("Clip this")

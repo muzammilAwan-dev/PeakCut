@@ -20,6 +20,7 @@ Branch: `develop`. Last updated: 2026-11-19 (everything that can be built and te
 | S6b | Optional extras | not built |
 | S7 | Key vault (Windows DPAPI) | built; real Windows sealing UNVERIFIED |
 | S8 | Browser extension "Clip this" | built; never loaded into a real browser |
+| S9 | Activity log + "Find working models" | **built** (sandbox-tested incl. real browser); real providers UNVERIFIED |
 | S-Brand | Name ViralCut, new logos, `VIRALCUT_*` settings | done (the GitHub repository name is unchanged) |
 | Release | Clean-VM test | **owner**: follow `docs/RELEASE_TEST.md` |
 

@@ -448,6 +448,8 @@ img.av{object-fit:cover}
 .set-sec:last-child{border-bottom:0}
 .pool-card{border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;margin:12px 0;display:grid;gap:12px;max-width:640px}
 .pool-card .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.found-list{list-style:none;margin:6px 0 10px;padding:0}.found-list li{padding:3px 0;line-height:1.8}.found-list code{font-size:13px}
+.logbox{max-height:340px;overflow:auto;white-space:pre-wrap;word-break:break-all;font-size:12px;padding:12px;border:1px solid var(--line);margin-top:12px;max-width:900px}
 .set-sec h2{font-size:17px;color:var(--brand-ink);margin-bottom:4px}
 .set-sec .help{margin-bottom:16px}
 .set-load{padding:40px 0;color:var(--faint)}
@@ -2006,9 +2008,15 @@ function poolHtml(P) {
     const acct = x.id === "cloudflare" ? `<label class="f">Account id<span class="with"><input id="pa_${esc(x.id)}" spellcheck="false" placeholder="Your Cloudflare account id"><button class="btn" type="button" data-act="poolacct" data-id="${esc(x.id)}">Save</button></span></label>` : "";
     const local = x.local ? `<label class="f">Model names on this computer<span class="with"><input id="pl_models" value="${esc(P.local_models.join(", "))}" placeholder="for example llama3.1" spellcheck="false"><button class="btn" type="button" data-act="poollocal">Save and test</button></span><span class="hint">Nothing leaves this computer. Needs the model installed in Ollama.</span></label>` : "";
     const models = x.models.length ? `<p class="sub">${x.models.map(m => esc(m.id) + (m.json_mode ? ` (JSON: ${esc(m.json_mode)})` : "")).join(" · ")}</p>` : "";
+    const FS = {working: ["ok", "Works"], busy: ["warn", "Busy, kept"], not_found: ["bad", "Not available"], no_access: ["bad", "No access"], not_json: ["bad", "Not in JSON"], refused: ["bad", "Refused"], unreachable: ["bad", "No answer"], error: ["bad", "Error"]};
+    const fm = (x.found && x.found.models) || [];
+    const okRows = fm.filter(m => m.status === "working"), firstGood = (okRows.length ? okRows : fm.filter(m => m.status === "busy")).slice(0, 3).map(m => m.id);
+    const found = fm.length ? `<div class="found"><p class="sub">Checked ${x.found.at ? new Date(x.found.at * 1000).toLocaleString() : ""}: ${x.found.listed} text models listed, the best ${fm.length} tried. Only the ones that answered are used.</p>
+        <ul class="found-list">${fm.map(m => `<li><span class="pill ${(FS[m.status] || ["warn"])[0]}">${esc((FS[m.status] || ["", m.status])[1])}</span> <code>${esc(m.id)}</code>${firstGood.includes(m.id) ? ` <span class="pill ok">${ic("check")}Preferred</span>` : ""}
+          <span class="sub">${m.code ? "status " + m.code : ""}${m.ms ? ", " + m.ms + " ms" : ""}${m.note ? ". " + esc(m.note) : ""}</span></li>`).join("")}</ul></div>` : "";
     return `<div class="pool-card"><div class="row"><b>${esc(x.label)}</b>${state}<span class="sub">${x.local ? "Stays on this computer" : x.trains_on_data === "no" ? "Says it does not train on your text" : "Training terms: " + esc(x.trains_on_data)}</span></div>
-      ${x.reason && x.enabled && !x.usable ? `<p class="sub">${esc(x.reason)}</p>` : ""}${models}<div class="ai-form">${key}${acct}${local}</div>
-      <div class="row"><button class="btn" data-act="pooltoggle" data-id="${esc(x.id)}" data-on="${x.enabled ? "0" : "1"}">${x.enabled ? "Switch off" : "Switch on"}</button>${x.has_key || x.local ? `<button class="btn" data-act="poolprobe" data-id="${esc(x.id)}">Test this service</button>` : ""}</div></div>`;
+      ${x.reason && x.enabled && !x.usable ? `<p class="sub">${esc(x.reason)}</p>` : ""}${models}${found}<div class="ai-form">${key}${acct}${local}</div>
+      <div class="row"><button class="btn" data-act="pooltoggle" data-id="${esc(x.id)}" data-on="${x.enabled ? "0" : "1"}">${x.enabled ? "Switch off" : "Switch on"}</button>${x.has_key || x.local ? `<button class="btn" data-act="poolprobe" data-id="${esc(x.id)}">Test this service</button>${x.local ? "" : `<button class="btn" data-act="pooldiscover" data-id="${esc(x.id)}" title="Lists the models and sends one tiny test request to each of the best few">Find working models</button>`}` : ""}</div></div>`;
   }).join("");
   return `<section class="set-sec"><h2>Free AI pool</h2>
     <p class="help">Several free AI services take turns, so one running out never stops a job. Speech to text stays on this computer. The transcript text is sent to the service that answers.</p>
@@ -2018,7 +2026,12 @@ function poolHtml(P) {
       <button class="btn ${P.consent ? "" : "primary"}" data-act="poolconsent" data-on="${P.consent ? "0" : "1"}">${P.consent ? "Stop sending text online" : "Review and allow online services"}</button></div>
     <label class="f" style="max-width:560px">Privacy<select id="pool_privacy" data-act="poolprivacy">${Object.entries(mode).map(([k, v]) => `<option value="${k}" ${k === P.privacy ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
     <p class="hint">When no service can answer, clips are picked by loudness instead of failing.</p></section>
-    <section class="set-sec"><h2>Services</h2>${svc}</section>`;
+    <section class="set-sec"><h2>Services</h2>${svc}</section>
+    <section class="set-sec"><h2>Activity log</h2>
+      <p class="help">Everything ViralCut does is written to a log file: start-ups, every request with its status code, each AI service's answers to checks and errors, and jobs. Keys and the text of your videos are never written to it.</p>
+      <p class="sub" id="log_path"></p>
+      <div class="row"><button class="btn" data-act="logshow">Show the latest lines</button><a class="btn" href="/api/log/download">Download the log</a></div>
+      <pre id="log_text" class="logbox" hidden></pre></section>`;
 }
 async function drawSettings() {
   const box = $("#sform"); if (!box) return;
@@ -2300,6 +2313,15 @@ document.addEventListener("click", async e => {
         }
       } finally { b.disabled = false; }
       return;
+    }
+    if (a === "logshow") { const r = await api("/api/log?lines=300"); $("#log_path").textContent = "File: " + r.path + " (detail level: " + r.level + ")"; const pre = $("#log_text"); pre.hidden = false; pre.textContent = r.text || "The log is empty."; pre.scrollTop = pre.scrollHeight; return; }
+    if (a === "pooldiscover") {
+      b.disabled = true; const was = b.textContent; b.textContent = "Testing…";
+      try {
+        const r = await send("/api/pool/discover", {provider: d.id}); await drawSettings();
+        const n = r.discover.tested.filter(m => m.status === "working").length;
+        return toast(n ? `${n} of ${r.discover.tested.length} models answered. The best are marked Preferred.` : (r.discover.note || "No model answered."), n ? "ok" : "bad");
+      } finally { b.disabled = false; b.textContent = was; }
     }
     if (a === "extcopy") { try { await navigator.clipboard.writeText($("#ext_token").value); toast("Copied.", "ok"); } catch { $("#ext_token").select(); toast("Press Ctrl+C to copy.", "ok"); } return; }
     if (a === "extreset") { if (!(await ask("Make a new key?", "The extension stops working until you paste the new key into it.", "Make new key"))) return; await send("/api/ext/token/reset", {}); await drawSettings(); return toast("New key made.", "ok"); }

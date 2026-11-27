@@ -58,6 +58,8 @@ your AI service, paste your key and press **Save and test** (see [Choose your AI
 
 - **Portable Windows build:** `python tools/build_portable.py` makes a folder you can zip. Unzip it anywhere and double-click `ViralCut.bat`. The first start fetches ffmpeg once and checks its fingerprint.
 - **Free AI pool:** Settings, **Free AI pool**. Paste free keys, press **Test**, and clips keep being found when one service runs out. Nothing is sent online until you tick the consent box. With no AI at all it falls back to speech and loudness.
+- **Find working models:** on each service press **Find working models**. It lists the models, tries the best few with one tiny request each, marks the ones that answer as **Preferred**, and the pool uses only those.
+- **Activity log:** `data/logs/viralcut.log` records start-ups, requests, AI status codes and errors (never keys or your video text). Show or download it in Settings, Free AI pool. `VIRALCUT_LOG_LEVEL=debug` adds more detail.
 - **Stop and Undo:** a running video can be stopped; each clip keeps one previous version you can bring back.
 - **Follow the face (optional):** `pip install -r requirements-optional.txt` adds a crop that follows the speaker. Without it the layout is simply not offered.
 - **Browser extension:** `extension/` (see its README) sends the page you are on to ViralCut. Settings, **Browser extension** shows the pairing key.

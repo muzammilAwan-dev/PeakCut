@@ -11,7 +11,7 @@ import traceback
 import uuid
 from pathlib import Path
 
-from . import brain, config, creators, ctx, load, media, render, roman, safe, transcribe, usage
+from . import applog, brain, config, creators, ctx, load, media, render, roman, safe, transcribe, usage
 
 class _FairQueue:
     """Whose video is next. Each person has their own line and the lines take turns, so someone who adds ten
@@ -192,6 +192,8 @@ def _set(job, **kw):
         if job.get("cancel") and kw.get("status") != "error":
             raise Cancelled(job.get("cancel_reason") or "Stopped by you.")
         job.update(kw, beat=time.time())
+    if "stage" in kw or "status" in kw:
+        applog.log("job", job=str(job.get("id", ""))[:12], status=job.get("status"), stage=job.get("stage"), error=kw.get("error"))
     save(job)
 
 
@@ -784,6 +786,7 @@ def _run_job(job):
     except Exception:  # noqa: BLE001
         pass
     creators.log(job["creator"], f"Video finished with {len(clips)} clips in {round(time.time() - t0)}s: {job['title']}")
+    applog.log("job.finished", job=str(job.get("id", ""))[:12], clips=len(clips), seconds=round(time.time() - t0), title=job.get("title"))
 
 
 def _worker(quick_only=False):
@@ -816,6 +819,9 @@ def _worker(quick_only=False):
             stopped = isinstance(e, Cancelled)
             if not stopped:
                 (Path(job["dir"]) / "error.log").write_text(traceback.format_exc(), encoding="utf-8")
+                applog.error("job.failed", e, job=str(job.get("id", ""))[:12], title=job.get("title"))
+            else:
+                applog.log("job.stopped", job=str(job.get("id", ""))[:12], reason=str(e))
             if kind == "job":
                 for c in job["clips"]:
                     if c.get("status") in ("queued", "rendering"):

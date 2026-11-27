@@ -16,7 +16,7 @@ import threading
 
 import httpx
 
-from . import config, vault
+from . import applog, config, vault
 
 # name -> (label shown on the pages, address, how it is spoken to, where to get a key, an example model id)
 PROVIDERS = {
@@ -233,7 +233,14 @@ def call(model: str, prompt: str, schema: dict):
     if how == "pool":
         from . import pool
         return pool.complete_json(prompt, schema)       # raises pool.PoolExhausted when no free service can answer
-    return {"gemini": _gemini, "openai": _openai, "anthropic": _anthropic}[how](model, prompt, schema)
+    t = applog.Timer()
+    try:
+        out = {"gemini": _gemini, "openai": _openai, "anthropic": _anthropic}[how](model, prompt, schema)
+    except Exception as e:  # noqa: BLE001
+        applog.log("ai.request", "warning", provider=provider(), model=model, ms=t.ms(), error=repr(e)[:300])
+        raise
+    applog.log("ai.request", provider=provider(), model=model, status=200, ms=t.ms(), tokens_in=out[1], tokens_out=out[2])
+    return out
 
 
 def route(model: str) -> str:

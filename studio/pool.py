@@ -40,7 +40,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from . import branding, jsoncheck, vault
+from . import applog, branding, jsoncheck, vault
 from .ledger import Ledger
 
 ADAPTERS = ("openai", "gemini")
@@ -198,8 +198,11 @@ class Settings:
     def key(self, p) -> str:
         v = self._section("keys").get(p["id"])
         if isinstance(v, str) and v.strip():
-            return vault.unseal(v.strip())            # "" when it was sealed on another computer: no key until pasted again
-        return (self._environ().get(p["key_env"]) or "").strip() if p["key_env"] else ""
+            k = vault.unseal(v.strip())               # "" when it was sealed on another computer: no key until pasted again
+        else:
+            k = (self._environ().get(p["key_env"]) or "").strip() if p["key_env"] else ""
+        applog.remember_secret(k)                     # so the log file can blank it out wherever it shows up
+        return k
 
     def account_id(self, p) -> str:
         v = self._section("account_ids").get(p["id"])
@@ -221,6 +224,11 @@ class Settings:
         if v is not None:
             return str(v).strip().lower() in ("1", "true", "yes", "on")
         return self.data().get("consent") is True
+
+    def found(self, pid) -> dict:
+        """What the last "Find working models" run saw for this service ({} when it never ran)."""
+        v = self._section("found").get(pid)
+        return v if isinstance(v, dict) else {}
 
     def probe_of(self, pid, model) -> dict:
         v = self._section("probes").get(f"{pid}/{model}")
@@ -340,6 +348,33 @@ TRANSPORTS = {"openai": send_openai, "gemini": send_gemini}
 
 
 # ---------------------------------------------------------------- the pool
+# ---------------------------------------------------------------- finding the models that really work
+NOT_FOR_TEXT = ("embed", "tts", "image", "imagen", "veo", "aqa", "live", "audio", "whisper", "moderation", "guard", "rerank", "transcribe",
+                "dall-e", "robotics", "computer-use", "speech", "video", "music", "lyria", "nano-banana", "vision-preview", "orpheus", "playai")
+
+
+def text_model(mid: str, methods=None) -> bool:
+    """Could this be a model that answers text with text? (Embedding, speech, image and moderation models cannot.)"""
+    low = mid.lower()
+    if methods is not None and "generateContent" not in methods:
+        return False
+    return not any(w in low for w in NOT_FOR_TEXT)
+
+
+def rank_model(mid: str, known=()) -> float:
+    """Higher is a better first choice for ViralCut: a model we already know, a finished (not preview) one, a fast and cheap kind
+    (flash, lite, mini, small, instant, 8b, oss), a newer version. Big 'pro' kinds are put later: free plans often exclude them."""
+    low, score = mid.lower(), 0.0
+    score += 20 if mid in known else 0
+    score += 0 if re.search(r"preview|exp|beta|alpha|-\d{2}-\d{2}|-\d{4}$", low) else 10
+    score += 5 if re.search(r"lite|flash|mini|small|instant|8b|oss|haiku", low) else 0
+    score -= 3 if re.search(r"pro|ultra|opus|405b|235b|120b", low) else 0
+    v = re.search(r"(\d+)(?:\.(\d+))?", low)
+    if v:
+        score += min(9.0, int(v.group(1)) + int(v.group(2) or 0) / 10)
+    return score
+
+
 class Pool:
     def __init__(self, catalog, ledger, settings, clock=time.time, sleep=time.sleep, transports=None,
                  max_wait=75.0, total_wait=150.0, timeout=120.0, est_out=1500):
@@ -355,6 +390,17 @@ class Pool:
             return [{"id": mid, "ctx": 8192, "json_mode": "object", "tier": 3, "limits": {"rpm": None, "rpd": None, "tpm": None, "tpd": None, "reset": "utc"}}
                     for mid in self.settings.local_models()]
         out = []
+        seen = self.settings.found(p["id"])
+        working = [x for x in seen.get("models", []) if x.get("ok") is not False and x.get("status") in ("working", "busy")]
+        catalog = {m["id"]: m for m in p["models"]}
+        if working:                                       # the owner ran "Find working models": only those that answered are used
+            base_mode = "schema" if p["adapter"] == "gemini" else "unknown"
+            for i, x in enumerate(working):
+                m = catalog.get(x["id"]) or {"id": x["id"], "ctx": x.get("ctx") or 32000, "json_mode": base_mode, "tier": 1 if i < 2 else 2,
+                                             "limits": {"rpm": None, "rpd": None, "tpm": None, "tpd": None, "reset": "pacific" if p["adapter"] == "gemini" else "utc"}}
+                found = self.settings.probe_of(p["id"], m["id"]).get("json_mode") or x.get("json_mode")
+                out.append({**m, "json_mode": found} if m["json_mode"] == "unknown" and found in ("schema", "object", "none") else m)
+            return out
         for m in p["models"]:
             found = self.settings.probe_of(p["id"], m["id"]).get("json_mode")
             out.append({**m, "json_mode": found} if m["json_mode"] == "unknown" and found in ("schema", "object", "none") else m)
@@ -468,6 +514,7 @@ class Pool:
         """Returns (answer, tokens in, tokens out). Raises PoolExhausted when no service can answer."""
         est_in, est_out = estimate_tokens(prompt, schema), self.est_out
         started, tried = self.clock(), set()
+        self._tl.purpose = purpose
         for _ in range(24):
             now = self.clock()
             everyone = self.explain(est_in, est_out, now)
@@ -478,6 +525,7 @@ class Pool:
                 if waits and min(waits) <= self.max_wait and (now - started) + min(waits) <= self.total_wait:
                     self.sleep(min(waits) + 0.05)
                     continue
+                applog.log("pool.exhausted", "warning", purpose=purpose, why=self._why(everyone, tried))
                 raise PoolExhausted(self._why(everyone, tried))
             try:
                 return self._call(min(usable, key=self._order), prompt, schema, est_in, est_out, tried)
@@ -496,10 +544,12 @@ class Pool:
             reserve = est_in + est_out
             self.ledger.add(pid, mid, buckets, req=1, tokens=reserve)       # counted before sending, so threads in step do not overshoot
             unusable = None
+            timer = applog.Timer()
             try:
                 raw, tin, tout = send(p, m, key, ask, schema, self.timeout)
             except NotJSON as e:                              # answered, but not with JSON: handled below like a wrong shape
                 raw, tin, tout, unusable = None, 0, 0, e
+                applog.log("pool.request", "warning", provider=pid, model=mid, status=200, ms=timer.ms(), result="answered, not JSON", retry=second_try)
             except ProviderError as e:
                 self._on_error(p, m, e, tried)
                 raise _Retry()
@@ -528,12 +578,15 @@ class Pool:
             self.ledger.update(pid, "", fails=0)
             self._tl.route = f"{pid}/{mid}"
             self._tl.dropped = dropped
+            applog.log("pool.request", provider=pid, model=mid, status=200, ms=timer.ms(), tokens_in=tin, tokens_out=tout, dropped=dropped or None,
+                       reply=(json.dumps(out)[:300] if applog.level() == "debug" else f"{len(json.dumps(out))} characters"), purpose=getattr(self._tl, "purpose", ""))
             return out, tin, tout
         raise _Retry()
 
     def _on_error(self, p, m, e, tried):
         """Remember what a failed request tells us about this service or model."""
         pid, mid, now, s = p["id"], m["id"], self.clock(), e.status
+        applog.log("pool.error", "warning", provider=pid, model=mid, status=s if s else e.kind, reply=e.body)
         self.ledger.add_to(pid, mid, fail_total=1)
         if s in (401, 403):
             self.ledger.update(pid, "", disabled=f"the key was refused (status {s}); save a new key to switch it on again")
@@ -598,7 +651,9 @@ class Pool:
                         "usable": any(r["ok"] for r in mine), "waiting": any((not r["ok"]) and r["wait"] is not None for r in mine),
                         "reason": next((r["reason"] for r in mine if not r["ok"]), ""),
                         "models": [{"id": r["model"], "ok": r["ok"], "reason": r["reason"], "json_mode": self.settings.probe_of(p["id"], r["model"]).get("json_mode", "")}
-                                   for r in mine if r["model"]]})
+                                   for r in mine if r["model"]],
+                        "found": {"at": self.settings.found(p["id"]).get("at"), "listed": self.settings.found(p["id"]).get("listed", 0),
+                                  "models": self.settings.found(p["id"]).get("models", [])}})
         return out
 
     # ---------------------------------------------------------- changes from the settings page
@@ -609,12 +664,15 @@ class Pool:
             raise ValueError("Choose one of the services in the list.")
         if key and not re.fullmatch(r"\S{8,400}", key):
             raise ValueError("That does not look like a key.")
+        applog.remember_secret(key)
+        applog.log("pool.key_saved", provider=provider_id, key_ends_in=key[-4:] if len(key) >= 12 else "", cleared=not key)
         self.settings.change("keys", provider_id, vault.seal(key))
         self.ledger.update(provider_id, "", disabled="", fails=0, cooldown_until=0.0)     # a new key gives the service a fresh start
 
     def set_enabled(self, provider_id, on: bool):
         if not any(x["id"] == provider_id for x in self.catalog.providers()):
             raise ValueError("Choose one of the services in the list.")
+        applog.log("pool.enabled", provider=provider_id, on=bool(on))
         self.settings.change("enabled", provider_id, bool(on))
 
     def save_account(self, provider_id, value):
@@ -632,6 +690,7 @@ class Pool:
         self.settings.change(None, "local_models", names)
 
     def set_consent(self, on: bool):
+        applog.log("pool.consent", on=bool(on))
         self.settings.change(None, "consent", bool(on))
 
     def probe(self, provider_id) -> dict:
@@ -705,6 +764,8 @@ class Pool:
                 info.update(key_ok=False, note="The service did not accept this key.")
             else:
                 info["note"] = "The service could not be reached." if e.status is None else f"The service answered with an error ({e.status})."
+        applog.log("pool.probe", "info" if info["key_ok"] else "warning", provider=provider_id, model=info["model"], key_ok=info["key_ok"],
+                   json_mode=info["json_mode"], listed=len(info["listed"]), note=info["note"])
         if info["key_ok"] is False:
             self.ledger.update(provider_id, "", disabled="key refused")
         elif self.ledger.state(provider_id)["disabled"] == "key refused":
@@ -713,9 +774,107 @@ class Pool:
             self.settings.change("probes", f"{provider_id}/{m['id']}", {"json_mode": info["json_mode"], "at": info["at"]})
         return {k: v for k, v in info.items() if k != "at"} | {"provider": provider_id}
 
+    def discover(self, provider_id, limit=6) -> dict:
+        """Ask the service which models it has, rank them, and send one tiny request (no text of yours) to each of the best few
+        to see which really answer. The result is saved and the pool then uses only the ones that answered. At most `limit` (8)
+        requests, and only when the owner presses the button."""
+        p0 = next((x for x in self.catalog.providers() if x["id"] == provider_id), None)
+        if not p0:
+            raise ValueError("Choose one of the services in the list.")
+        p = self._resolved(p0)
+        key = self.settings.key(p0)
+        if p is None:
+            raise ValueError("Save the account id first.")
+        if p0["needs_key"] and not p0["local"] and not key:
+            raise ValueError("Save a key first.")
+        if not p0["local"] and not self.settings.consent():
+            raise ValueError("Allow online services first (the button above). The check sends a few tiny test requests.")
+        limit = max(1, min(8, int(limit)))
+        t = min(self.timeout, 30)
+        timer = applog.Timer()
+        known = [m["id"] for m in p0["models"]]
+        listed, ctx_of = [], {}
+        try:
+            if p["adapter"] == "gemini":
+                status, _h, text = _get(f"{p['base_url']}?pageSize=200", {"x-goog-api-key": key}, t, key)
+            else:
+                status, _h, text = _get(f"{p['base_url']}/models", {"Authorization": f"Bearer {key}"} if key else {}, t, key)
+        except ProviderError as e:
+            applog.log("pool.discover.list", "warning", provider=provider_id, status=e.status or e.kind)
+            raise ValueError("The service could not be reached.")
+        applog.log("pool.discover.list", "info" if status == 200 else "warning", provider=provider_id, status=status, ms=timer.ms(),
+                   reply=text if status != 200 else f"{len(text)} characters")
+        if status in (401, 403):
+            self.ledger.update(provider_id, "", disabled="key refused")
+            raise ValueError("The service did not accept this key.")
+        if status == 200:
+            try:
+                data = json.loads(text)
+                if p["adapter"] == "gemini":
+                    for x in data.get("models", []):
+                        mid = str(x.get("name", "")).removeprefix("models/")
+                        if mid and text_model(mid, x.get("supportedGenerationMethods") or []):
+                            listed.append(mid)
+                            ctx_of[mid] = int(x.get("inputTokenLimit") or 0) or None
+                else:
+                    listed = [str(x["id"]) for x in data.get("data", []) if isinstance(x, dict) and "id" in x and text_model(str(x["id"]))]
+            except (ValueError, AttributeError, TypeError, KeyError):
+                listed = []
+        listed = [m for m in dict.fromkeys(listed) if re.fullmatch(r"[\w.\-:/@]{1,120}", m)]
+        # when the list is not available (a service without /models), test the models we already know
+        pool_ids = listed or known
+        ranked = sorted(pool_ids, key=lambda m: -rank_model(m, known))[:limit]
+        send = self.transports[p["adapter"]]
+        results = []
+        for i, mid in enumerate(ranked):
+            tt = applog.Timer()
+            row = {"id": mid, "ctx": ctx_of.get(mid), "ok": False, "status": "error", "code": None, "note": "", "ms": 0, "json_mode": ""}
+            try:
+                send(p, {"id": mid, "ctx": 8192, "json_mode": "unknown", "tier": 1, "limits": {}}, key, 'Reply with {"ok": true}',
+                     {"type": "OBJECT", "properties": {"ok": {"type": "BOOLEAN"}}}, t)
+                row.update(ok=True, status="working", code=200, json_mode="schema" if p["adapter"] == "gemini" else "object", note="answered in JSON")
+            except NotJSON:
+                row.update(status="not_json", code=200, note="answered, but not in JSON, so it is not used")
+            except ProviderError as e:
+                row["code"] = e.status
+                if e.status in (404, 410):
+                    row.update(status="not_found", note="this key cannot use this model (not found)")
+                elif e.status in (401, 403):
+                    row.update(status="no_access", note="not allowed for this key or plan")
+                elif e.status == 429:
+                    row.update(ok=None, status="busy", note="exists, but its free allowance is used up right now; kept")
+                elif e.status is None:
+                    row.update(status="unreachable", note="could not be reached")
+                else:
+                    row.update(status="refused", note=f"the service refused the test (status {e.status})")
+                applog.log("pool.discover.test", "warning", provider=provider_id, model=mid, status=e.status or e.kind, ms=tt.ms(), reply=e.body)
+            except Exception as e:  # noqa: BLE001
+                row.update(status="error", note="unexpected error")
+                applog.error("pool.discover.test", e, provider=provider_id, model=mid)
+            else:
+                applog.log("pool.discover.test", provider=provider_id, model=mid, status=200, ms=tt.ms(), result="working")
+            row["ms"] = tt.ms()
+            results.append(row)
+            if row["status"] == "no_access" and i == 0 and row["code"] == 401:
+                break
+        good = [r for r in results if r["ok"] is not False and r["status"] in ("working", "busy")]
+        for r in results:                                 # forget old "not found" marks for models that now answer
+            if r["status"] == "working" and self.ledger.state(provider_id, r["id"])["disabled"]:
+                self.ledger.update(provider_id, r["id"], disabled="")
+            if r["json_mode"]:
+                self.settings.change("probes", f"{provider_id}/{r['id']}", {"json_mode": r["json_mode"], "at": self.clock()})
+        self.settings.change("found", provider_id, {"at": self.clock(), "listed": len(listed), "models": results})
+        if good and self.ledger.state(provider_id)["disabled"] in ("key refused",):
+            self.ledger.update(provider_id, "", disabled="")
+        applog.log("pool.discover", provider=provider_id, listed=len(listed), tested=len(results), working=len([r for r in results if r["status"] == "working"]),
+                   preferred=",".join(r["id"] for r in good[:3]), ms=timer.ms())
+        return {"provider": provider_id, "listed": len(listed), "tested": results, "preferred": [r["id"] for r in good],
+                "note": "" if good else "None of the tested models answered. See the reasons next to each one."}
+
     def set_privacy(self, mode):
         if mode not in PRIVACY_MODES:
             raise ValueError("Privacy is strict, relaxed or any.")
+        applog.log("pool.privacy", mode=mode)
         self.settings.change(None, "privacy", mode)
 
 
