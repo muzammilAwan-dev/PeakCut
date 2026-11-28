@@ -13,6 +13,7 @@ Do in order. Stop at the first failure and send the text of the error.
 9. **Portable:** `python tools/build_portable.py`. Unzip the result on a clean folder (or another PC), double-click `ViralCut.bat`. First start downloads ffmpeg; the dashboard must open.
 10. **Extension:** Chrome or Edge, `chrome://extensions`, Developer mode, Load unpacked, pick `extension/`. Copy the key from Settings, Browser extension into the popup. Open any video page, press Clip this. A job must appear.
 11. **Keys sealed:** open `data/pool.json`; saved keys should start with `dpapi:`.
-12. **Eval (optional):** follow `docs/EVAL.md` with 3 to 5 videos you picked by hand.
+12. **YouTube access:** run `.venv\Scripts\python.exe tools\yt_check.py` (add a video link of your own as an argument if you like) and keep `yt-check.txt`. Then Settings, YouTube access, choose Automatic, press Test; expect a green line. Make clips from a YouTube link that has captions: `data\logs\viralcut.log` must show `youtube.captions.used`.
+13. **Eval (optional):** follow `docs/EVAL.md` with 3 to 5 videos you picked by hand.
 
 Known not built: Hindi/Urdu speech model (S6d), yt-dlp nightly updater (S1b), AI candidate pre-scoring.

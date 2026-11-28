@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 
 from . import admin as admins
 from . import account, load
-from . import (accounts, ai, alerts, applog, auth, config, creators, ctx, db, exttoken, jobs, live, media, pool, posting,
+from . import (accounts, ai, alerts, applog, auth, ytaccess, config, creators, ctx, db, exttoken, jobs, live, media, pool, posting,
                profiles, render, safe, transcribe, updates, usage)
 
 app = FastAPI(title="ViralCut", docs_url=None, redoc_url=None, openapi_url=None)
@@ -1443,6 +1443,42 @@ def pool_discover(request: Request, body: dict = Body(...)):
         raise HTTPException(400, str(e))
     ctx.bump()
     return {"discover": r, **_pool_view()}
+
+
+@app.get("/api/youtube")
+def youtube_get(request: Request):
+    _admin(request)
+    return {**ytaccess.state(), "paused": media.youtube_paused()}
+
+
+@app.put("/api/youtube")
+def youtube_put(request: Request, body: dict = Body(...)):
+    """Allow (or stop) using a signed-in browser when YouTube asks ViralCut to prove it is not a bot."""
+    _admin(request)
+    try:
+        ytaccess.save(str(body.get("mode", "")), str(body.get("file", "")))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    media._yt_refused_until = 0.0
+    return {**ytaccess.state(), "paused": False}
+
+
+@app.post("/api/youtube/test")
+def youtube_test(request: Request):
+    """One small check on a public video: does YouTube answer ViralCut right now, and which sign-in (if any) did it need?"""
+    _admin(request)
+    _throttle("yttest:" + ctx.uid(), 6, 600)
+    media._yt_refused_until = 0.0
+    try:
+        i = media.info("https://www.youtube.com/watch?v=jNQXAC9IWRw")
+        ok, msg = True, f"YouTube answered ({i.get('title') or 'a public video'})."
+    except media.YouTubeBlocked:
+        ok, msg = False, "YouTube still asks to confirm this is not a bot. " + (ytaccess.state()["note"] or "")
+    except Exception as e:  # noqa: BLE001
+        ok, msg = False, "The check failed: " + safe.friendly(e, 200)
+    st = ytaccess.state()
+    applog.log("youtube.test", "info" if ok else "warning", ok=ok, using=st["using"] or "none", note=msg)
+    return {"ok": ok, "message": msg, **st, "paused": media.youtube_paused()}
 
 
 @app.get("/api/log")

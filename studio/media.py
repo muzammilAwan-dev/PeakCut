@@ -1,5 +1,6 @@
 """Getting video in: link download, probing, audio extraction, loudness."""
 import contextlib
+import functools
 import json
 import re
 import subprocess
@@ -9,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from . import config
+from . import applog, config, ytaccess
 
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -20,7 +21,8 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 YT_PAUSE = 600
 _yt_refused_until = 0.0
 YT_BLOCKED = ("YouTube isn't letting ViralCut download videos right now. Upload the video file instead, or use a "
-              "Twitch or Kick link. YouTube links will be tried again in a few minutes.")
+              "Twitch or Kick link. YouTube links will be tried again in a few minutes. "
+              "(Settings, YouTube access can let ViralCut use a browser you are signed in to, which usually fixes this.)")
 _BOT_CHECK = re.compile(r"not a bot|confirm you.?re not|sign in to confirm(?! your age)", re.I)
 
 
@@ -100,7 +102,23 @@ def _ydl(opts):
     # a channel or playlist link is answered as "a list" straight away, never walked video by video
     return yt_dlp.YoutubeDL({"noplaylist": True, "quiet": True, "no_warnings": True, "logger": _Quiet(),
                              "extract_flat": "in_playlist", "playlistend": 1, "socket_timeout": 20,
-                             "concurrent_fragment_downloads": 4, **opts})
+                             "concurrent_fragment_downloads": 4, **ytaccess.opts(), **opts})
+
+
+def _retry_with_sign_in(fn):
+    """If YouTube refuses (the bot check) and the owner allowed it, find a signed-in browser and do the same thing once more."""
+    @functools.wraps(fn)
+    def wrapper(url, *a, **k):
+        global _yt_refused_until
+        try:
+            return fn(url, *a, **k)
+        except YouTubeBlocked:
+            if not (is_youtube(url) and ytaccess.configured() and not ytaccess.state()["in_use"] and ytaccess.activate()):
+                raise
+            _yt_refused_until = 0.0
+            applog.log("youtube.retry", "info", how=ytaccess.state()["using"], function=fn.__name__)
+            return fn(url, *a, **k)
+    return wrapper
 
 
 def _video_format(height):
@@ -115,6 +133,7 @@ def _biggest(job_dir: Path, stem: str) -> Path:
     return files[0]
 
 
+@_retry_with_sign_in
 def info(url: str) -> dict:
     """Title, channel and length, without downloading anything."""
     with _youtube_guard(url), _ydl({}) as ydl:
@@ -124,6 +143,7 @@ def info(url: str) -> dict:
             "thumbnail": i.get("thumbnail") or "", "kind": i.get("_type") or "video"}
 
 
+@_retry_with_sign_in
 def youtube_words(url: str, covers=None):
     """YouTube's own transcript of a video, word by word: ([{'w', 's', 'e'}, ...], language, kind), or None.
     Tried in this order, always in the language that was spoken, never a translation:
@@ -150,19 +170,26 @@ def youtube_words(url: str, covers=None):
                 tries.append(("manual", mk[0], manual[mk[0]]))
         if key:
             tries.append(("auto", key, auto[key]))
+        applog.log("youtube.captions.found", spoken=spoken or "unknown", manual=",".join(sorted(manual)[:12]), auto=",".join(sorted(auto)[:6]),
+                   will_try=",".join(f"{t[0]}:{t[1]}" for t in tries))
         for kind, k, formats in tries:
             track = next((f for f in formats or [] if f.get("ext") == "json3" and f.get("url")), None)
             if not track:
+                applog.log("youtube.captions.skip", "warning", kind=kind, lang=k, why="no json3 version offered")
                 continue
             try:
                 words = _caption_words(json.loads(ydl.urlopen(track["url"]).read(40_000_000)))
-            except Exception:  # noqa: BLE001 - this kind would not download: try the next
+            except Exception as e:  # noqa: BLE001 - this kind would not download (often a 429 for subtitles): try the next
+                applog.log("youtube.captions.skip", "warning", kind=kind, lang=k, why=str(e)[:200])
                 continue
             if words and (covers is None or covers(words)):
+                applog.log("youtube.captions.used", kind=kind, lang=k, words=len(words))
                 return words, k.replace("-orig", ""), kind
+            applog.log("youtube.captions.skip", "info", kind=kind, lang=k, why="empty" if not words else "does not cover the video")
     return None
 
 
+@_retry_with_sign_in
 def youtube_english_words(url: str):
     """YouTube's English captions of a video spoken in another language: ones a person wrote if there are any,
     otherwise YouTube's own translation of its transcript. Word list like youtube_words, or None."""
@@ -209,6 +236,7 @@ def _caption_words(data: dict) -> list:
 _PREVIEWS: dict = {}
 
 
+@_retry_with_sign_in
 def preview(url: str) -> dict:
     """What the user will get from a link, checked before any work starts. The thumbnail comes back inline
     (the page may only load images from this site). Cached, so retyping a link costs nothing."""
@@ -262,6 +290,7 @@ def save_thumb(job_dir: Path, url: str = "", video: Path = None) -> bool:
     return False
 
 
+@_retry_with_sign_in
 def download_audio(url: str, job_dir: Path, on_progress=None) -> Path:
     """Audio only: a few seconds even for long videos, and all the AI needs to pick clips."""
     def hook(d):
@@ -275,6 +304,7 @@ def download_audio(url: str, job_dir: Path, on_progress=None) -> Path:
     return _biggest(job_dir, "audio_src")
 
 
+@_retry_with_sign_in
 def download(url: str, job_dir: Path, height=720) -> Path:
     """The whole video. Used for shorter videos, where this is quicker than fetching pieces."""
     with _youtube_guard(url), _ydl({"format": _video_format(height), "merge_output_format": "mp4",
@@ -283,6 +313,7 @@ def download(url: str, job_dir: Path, height=720) -> Path:
     return _biggest(job_dir, "source")
 
 
+@_retry_with_sign_in
 def download_section(url: str, out_dir: Path, stem: str, start: float, end: float, height=720) -> Path:
     """Just one stretch of the video. The cut lands on a keyframe, so find_offset() pins the true start."""
     from yt_dlp.utils import download_range_func

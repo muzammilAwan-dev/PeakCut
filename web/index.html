@@ -324,6 +324,7 @@ label.ck input{accent-color:var(--brand);margin:0}
 .ropt .hint{font-size:12px;color:var(--faint);margin:0}
 .badge.draft{background:#FFF1D6;color:#8A5300}
 .mode-note{font-size:12px;color:var(--faint);margin:6px 2px 0}
+.ytopts{display:grid;gap:8px;margin:12px 0;max-width:640px}.radio{display:flex;gap:10px;align-items:flex-start;background:#fff;border-radius:12px;padding:10px 12px;cursor:pointer}.radio small{display:block;color:var(--dim);font-weight:400;font-size:12.5px;margin-top:2px}.radio input{margin-top:4px}
 .lp .th video{width:100%;height:100%;object-fit:cover;display:block}
 .lp .tx em{font-style:normal;color:#A12A2A}
 .lp .ok.up{background:var(--brand-soft);color:var(--brand-ink);min-width:52px;justify-content:center}
@@ -1312,7 +1313,7 @@ function pathFor(v, tab) {
 function fromPath(path) {
   const m = path.match(/^\/app\/creators\/([^/]+)(?:\/(setup|activity|clips))?\/?$/);
   if (m) return ["c:" + decodeURIComponent(m[1]), m[2] || "clips"];
-  const st = path.match(/^\/app\/settings(?:\/(ai|profile|security|apps))?\/?$/);
+  const st = path.match(/^\/app\/settings(?:\/(ai|profile|security|apps|pool|ext|yt))?\/?$/);
   if (st) return ["settings", st[1] || null];
   const k = Object.keys(ROUTES).find(x => ROUTES[x] && path.replace(/\/$/, "") === "/app/" + ROUTES[x]);
   return [k || "overview", "clips"];
@@ -2034,7 +2035,7 @@ function drawUsage() {
 /* ============================================================ settings */
 // With sign-in off there is no profile or password to manage. The AI section is for whoever runs the server.
 const setTabs = () => [
-  ...(S.status.user?.is_admin ? [["ai", "AI", "bolt", "Your AI service, model and key"], ["pool", "Free AI pool", "bolt", "Free services, keys and privacy"], ["ext", "Browser extension", "link", "Add a video from the page you are watching"]] : []),
+  ...(S.status.user?.is_admin ? [["ai", "AI", "bolt", "Your AI service, model and key"], ["pool", "Free AI pool", "bolt", "Free services, keys and privacy"], ["ext", "Browser extension", "link", "Add a video from the page you are watching"], ["yt", "YouTube access", "link", "If YouTube says to confirm you are not a bot"]] : []),
   ...(S.status.accounts === false ? [] : [["profile", "Profile", "user", "Your name, email and how you sign in"],
                                           ["security", "Security", "lock", "Password and signing out"]]),
   ["apps", "Connected apps", "plug", "Where your clips get posted"]];
@@ -2112,6 +2113,20 @@ async function drawSettings() {
           <li>Click the extension, paste the key below once, press Save.</li></ol>
         <label class="f" style="max-width:560px">Key<span class="with"><input id="ext_token" value="${esc(T.token)}" readonly spellcheck="false"><button class="btn" type="button" data-act="extcopy">Copy</button><button class="btn" type="button" data-act="extreset">Make a new key</button></span>
         <span class="hint">Only this computer's ViralCut accepts it, and it can only add video links. Making a new key stops the old one working.</span></label></section>`;
+    }
+    if (tab === "yt") {
+      const Y = await api("/api/youtube"), M = Y.mode;
+      const ro = (v, t, sm) => `<label class="radio"><input type="radio" name="ytmode" value="${v}" ${M === v ? "checked" : ""} ${Y.from_env ? "disabled" : ""}><span><b>${t}</b><small>${sm}</small></span></label>`;
+      body.innerHTML = `<section class="set-sec"><h2>YouTube access</h2>
+        <p class="help">Sometimes YouTube answers <b>"Sign in to confirm you are not a bot"</b> and stops downloads. ViralCut always tries as a visitor first. If YouTube refuses, it can find a browser on this computer that is signed in to YouTube, use that sign-in, and try again by itself. Nothing is sent anywhere else.</p>
+        <div class="ytopts">${ro("off", "Off", "Only ever download as a visitor.")}
+          ${ro("auto", "Automatic (recommended)", "Only after YouTube refuses: look for a signed-in Firefox, Edge, Chrome or Brave.")}
+          ${ro("firefox", "Firefox only", "Works best. Chrome and Edge on Windows often lock their sign-in away from other programs.")}
+          ${ro("file", "A cookies file", "Advanced: the full path of a cookies.txt you exported.")}</div>
+        <label class="f" style="max-width:560px">Cookies file path<input id="yt_file" value="${esc(Y.file || "")}" placeholder="C:\\Users\\you\\cookies.txt" ${Y.from_env ? "disabled" : ""}></label>
+        <p class="hint">Please use a spare Google account for this. Many automatic downloads from a personal account can make YouTube challenge it.${Y.from_env ? " This is set by the PEAKCUT_YT_COOKIES setting." : ""}</p>
+        <div class="row"><button class="btn primary" data-act="ytsave" ${Y.from_env ? "disabled" : ""}>Save</button><button class="btn" data-act="yttest">Test YouTube now</button></div>
+        <p class="sub" id="yt_result">${Y.paused ? "YouTube links are paused for a few minutes after a refusal. Press Test to try again." : Y.in_use ? "A browser sign-in is in use (" + esc(Y.using) + ")." : ""}${Y.note ? " " + esc(Y.note) : ""}</p></section>`;
     }
     if (tab === "pool") {
       const P = S.pool = await api("/api/pool");
@@ -2366,6 +2381,15 @@ document.addEventListener("click", async e => {
           return toast(pr.key_ok === false ? "The service did not accept this key." : pr.key_ok ? `Works. JSON mode: ${pr.json_mode}. ${pr.note || ""}`.trim() : (pr.note || "Saved, but the service could not be checked."), pr.key_ok ? "ok" : "bad");
         }
       } finally { b.disabled = false; }
+      return;
+    }
+    if (a === "ytsave" || a === "yttest") {
+      const mode = document.querySelector('input[name="ytmode"]:checked')?.value || "off";
+      b.disabled = true; const was = b.textContent; if (a === "yttest") b.textContent = "Testing…";
+      try {
+        if (a === "ytsave") { await api("/api/youtube", {method: "PUT", body: JSON.stringify({mode, file: $("#yt_file")?.value || ""}), headers: {"Content-Type": "application/json"}}); toast("Saved.", "ok"); }
+        else { const r = await send("/api/youtube/test", {}); $("#yt_result").textContent = r.message + (r.using ? " (Signed-in browser used: " + r.using + ".)" : ""); toast(r.ok ? "YouTube answered." : "YouTube refused.", r.ok ? "ok" : "bad"); }
+      } finally { b.disabled = false; b.textContent = was; }
       return;
     }
     if (a === "logshow") { const r = await api("/api/log?lines=300"); $("#log_path").textContent = "File: " + r.path + " (detail level: " + r.level + ")"; const pre = $("#log_text"); pre.hidden = false; pre.textContent = r.text || "The log is empty."; pre.scrollTop = pre.scrollHeight; return; }

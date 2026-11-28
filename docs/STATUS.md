@@ -22,6 +22,7 @@ Branch: `develop`. Last updated: 2026-11-19 (everything that can be built and te
 | S8 | Browser extension "Clip this" | built; never loaded into a real browser |
 | S9 | Activity log + "Find working models" | **built** (sandbox-tested incl. real browser); real providers UNVERIFIED |
 | S10 | Trace files, podcast/stream modes, per-video settings, draft-then-full-quality | **built** (real ffmpeg tests, real-browser check); real YouTube download of sections UNVERIFIED |
+| S11 | YouTube access (bot check) + caption logging | **built** (key-free tests); real YouTube, Chrome/Edge cookie reading on Windows, and the PO-token provider UNVERIFIED / not built; owner runs `tools/yt_check.py` |
 | S-Brand | Name ViralCut, new logos, `VIRALCUT_*` settings | done (the GitHub repository name is unchanged) |
 | Release | Clean-VM test | **owner**: follow `docs/RELEASE_TEST.md` |
 

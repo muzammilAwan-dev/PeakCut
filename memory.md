@@ -1,4 +1,4 @@
-# memory.md (rev 16, 2026-11-27, current state only)
+# memory.md (rev 17, 2026-11-28, current state only)
 
 ## Project
 - Fork `muzammilAwan-dev/PeakCut` (company Amfaiz), branch `develop` only. Product name: **ViralCut** (repo name unchanged).
@@ -42,6 +42,8 @@
 - rev15 (S10): `studio/trace.py` (trace/ per video); option `mode` stream|podcast (brain.build_prompt); per-row Settings + Make again in the composer; draft (480p) then `/api/jobs/{id}/final` (jobs.request_final/finalize_clip, media.audio_window). UNVERIFIED: yt-dlp `download_range` on real YouTube at 720/1080 after a 480p draft; offsets found by sound matching only tested with a fake cut.
 
 - rev16: `media.youtube_words(url, covers)` tries manual captions then auto then own model; `transcript_from` = youtube-manual|youtube-auto|own. UNVERIFIED on real YouTube (json3 for manual tracks assumed).
+
+- rev17 (S11): `studio/ytaccess.py` + Settings tab "YouTube access" (`/api/youtube`, `/api/youtube/test`), `media._retry_with_sign_in` (visitor first; after a bot-check refusal and with consent, Firefox>Edge>Chrome>Brave cookies, retry once). `tools/yt_check.py` writes yt-check.txt. Captions logged (`youtube.captions.*`). bgutil PO-token plugin NOT built (GPL-3.0, needs OK + Windows test). UNVERIFIED on real YouTube.
 
 ## Next
 - Owner applies rev12, re-runs windows-baseline.bat, then continues `docs/RELEASE_TEST.md` from step 4.
