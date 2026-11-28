@@ -16,7 +16,8 @@ creator's live stream and clip the highlights while the stream is still running.
 - **Clips from any video.** Transcribes the audio, asks an AI which moments would hold a stranger's attention, and
   renders each one with captions in one of three styles.
 - **YouTube links.** Uses the captions already on the video (the owner's, then YouTube's own) before writing its own. If YouTube asks
-  "confirm you are not a bot", Settings, YouTube access lets ViralCut use a browser you are signed in to (off by default).
+  "confirm you are not a bot", Settings, YouTube access lets ViralCut use a sign-in (off by default): sent by the browser
+  extension (works with Chrome, Edge, Brave) or read from Firefox.
 - **Live clipping.** Records a stream into a rolling buffer and clips as it happens, using loudness, chat activity
   and the transcript.
 - **Workspaces per creator.** Channels, clip settings, posting rules and an activity log for each creator you clip.

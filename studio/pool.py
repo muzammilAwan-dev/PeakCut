@@ -119,6 +119,7 @@ def _clean_provider(p) -> "dict | None":
             "enabled_default": p.get("enabled_default") is True, "signup_url": str(p.get("signup_url") or "")[:200],
             "privacy": {"trains_on_data": pr.get("trains_on_data") if pr.get("trains_on_data") in TRAINS else "unknown",
                         "source_url": str(pr.get("source_url") or "")[:300], "verified_on": _date(pr.get("verified_on"))},
+            "recommended": [m for m in (p.get("recommended") or []) if isinstance(m, str) and re.fullmatch(r"[\w.\-:/@]{1,120}", m)][:12],
             "models": [m for m in (_clean_model(x) for x in (p.get("models") or [])) if m]}
 
 
@@ -361,11 +362,15 @@ def text_model(mid: str, methods=None) -> bool:
     return not any(w in low for w in NOT_FOR_TEXT)
 
 
-def rank_model(mid: str, known=()) -> float:
+def rank_model(mid: str, known=(), recommended=()) -> float:
     """Higher is a better first choice for ViralCut: a model we already know, a finished (not preview) one, a fast and cheap kind
     (flash, lite, mini, small, instant, 8b, oss), a newer version. Big 'pro' kinds are put later: free plans often exclude them."""
     low, score = mid.lower(), 0.0
     score += 20 if mid in known else 0
+    if mid in recommended:                      # our own list of models that suit this job, best first (only ever matched against the service's list)
+        score += 30 - 2 * min(recommended.index(mid), 5)
+    elif any(mid.startswith(r + "-") for r in recommended):      # a dated copy of a recommended model
+        score += 12
     score += 0 if re.search(r"preview|exp|beta|alpha|-\d{2}-\d{2}|-\d{4}$", low) else 10
     score += 5 if re.search(r"lite|flash|mini|small|instant|8b|oss|haiku", low) else 0
     score -= 3 if re.search(r"pro|ultra|opus|405b|235b|120b", low) else 0
@@ -793,6 +798,7 @@ class Pool:
         t = min(self.timeout, 30)
         timer = applog.Timer()
         known = [m["id"] for m in p0["models"]]
+        rec = p0.get("recommended") or []
         listed, ctx_of = [], {}
         try:
             if p["adapter"] == "gemini":
@@ -823,12 +829,15 @@ class Pool:
         listed = [m for m in dict.fromkeys(listed) if re.fullmatch(r"[\w.\-:/@]{1,120}", m)]
         # when the list is not available (a service without /models), test the models we already know
         pool_ids = listed or known
-        ranked = sorted(pool_ids, key=lambda m: -rank_model(m, known))[:limit]
+        ranked = sorted(pool_ids, key=lambda m: -rank_model(m, known, rec))[:limit]
+        applog.log_list("pool.discover.models", listed, provider=provider_id, shown=len(listed))
+        applog.log("pool.discover.rank", provider=provider_id, will_test=",".join(ranked),
+                   recommended_in_list=",".join(m for m in rec if m in listed) or "none", recommended_missing=",".join(m for m in rec if m not in listed) or "none")
         send = self.transports[p["adapter"]]
         results = []
         for i, mid in enumerate(ranked):
             tt = applog.Timer()
-            row = {"id": mid, "ctx": ctx_of.get(mid), "ok": False, "status": "error", "code": None, "note": "", "ms": 0, "json_mode": ""}
+            row = {"id": mid, "rec": mid in rec, "ctx": ctx_of.get(mid), "ok": False, "status": "error", "code": None, "note": "", "ms": 0, "json_mode": ""}
             try:
                 send(p, {"id": mid, "ctx": 8192, "json_mode": "unknown", "tier": 1, "limits": {}}, key, 'Reply with {"ok": true}',
                      {"type": "OBJECT", "properties": {"ok": {"type": "BOOLEAN"}}}, t)

@@ -177,6 +177,24 @@ def list_models(provider_id=None, address=None, with_key=None) -> list:
     return sorted({m for m in found if m})[:400]
 
 
+def suggest_models(provider_id, models, top=3) -> list:
+    """Which of the listed models to try first: the ones our own list calls good for this job, then fast, finished, newer ones.
+    Only ever picks from `models`, the service's own list. Logs the whole list so the log shows what the service offered."""
+    from . import applog, pool
+    pid = ALIASES.get(str(provider_id or "").lower(), str(provider_id or "").lower())
+    try:
+        entry = next((x for x in pool.get().catalog.providers() if x["id"] == pid), None)
+    except Exception:  # noqa: BLE001 - the pool may not be set up
+        entry = None
+    rec = (entry or {}).get("recommended") or []
+    known = [m["id"] for m in (entry or {}).get("models", [])]
+    usable = [m for m in models if pool.text_model(m)]
+    best = sorted(usable, key=lambda m: -pool.rank_model(m, known, rec))[:top]
+    applog.log_list("ai.models", models, provider=pid, shown=len(models))
+    applog.log("ai.models.suggested", provider=pid, suggested=",".join(best) or "none", recommended_in_list=",".join(m for m in rec if m in models) or "none")
+    return best
+
+
 def test() -> dict:
     """One tiny request with the settings in use, to prove the key, the address and the model all work."""
     ms = models()

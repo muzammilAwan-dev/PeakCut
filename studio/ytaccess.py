@@ -4,26 +4,31 @@ What the research says (see docs/DECISIONS.md, 2026-11-28): on a home internet c
 the fix that works for most people is to let yt-dlp read the YouTube sign-in from a browser that is already signed in. So:
 
   1. First every YouTube request goes out as a visitor (no sign-in, nothing of yours is used).
-  2. Only if YouTube refuses (the bot check) and the owner has allowed it, ViralCut looks for a signed-in browser by itself
-     (Firefox first, because Chrome and Edge on Windows lock their cookies against other programs), and repeats the request.
+  2. Only if YouTube refuses (the bot check) and the owner has allowed it, ViralCut uses a sign-in and repeats the request.
+     Where it comes from, best first: (a) the "Clip this" browser extension, which sends the YouTube sign-in from inside the
+     browser (works with Chrome, Edge and Brave, whose saved cookies are locked on Windows); (b) a browser's own saved cookies,
+     Firefox first, then Edge, Chrome, Brave; (c) a cookies.txt file the owner points to.
   3. It then keeps using that sign-in until ViralCut is closed.
 
 It is OFF until the owner allows it (Settings, YouTube access) because a sign-in is personal. Use a spare Google account: heavy
 automatic use can make YouTube challenge the account.
 
-Saved in data/youtube.json as {"mode": "off" | "auto" | "firefox" | "edge" | "chrome" | "brave" | "file", "file": "<cookies.txt path>"}.
+Saved in data/youtube.json as {"mode": "off" | "auto" | "firefox" | "edge" | "chrome" | "brave" | "extension" | "file", "file": "<cookies.txt path>"}.
 PEAKCUT_YT_COOKIES overrides it (same words, or a path to a cookies.txt file).
 """
 import json
 import os
 import threading
+import time
 from pathlib import Path
 
 from . import applog, config
 
-MODES = ("off", "auto", "firefox", "edge", "chrome", "brave", "file")
+MODES = ("off", "auto", "firefox", "edge", "chrome", "brave", "extension", "file")
 AUTO_ORDER = ("firefox", "edge", "chrome", "brave")
 LOGIN_COOKIES = {"SAPISID", "__Secure-3PAPISID", "SID", "__Secure-1PSID", "LOGIN_INFO"}
+EXT_MAX = 200_000                  # bytes of cookies the extension may send
+EXT_DOMAINS = (".youtube.com", ".google.com")
 _lock = threading.Lock()
 _state = {"on": False, "how": "", "note": "", "tried": {}}      # on: sign-in is being used right now
 
@@ -44,6 +49,72 @@ def settings() -> dict:
         return {"mode": mode, "file": str(v.get("file") or ""), "from_env": False}
     except (OSError, ValueError, AttributeError):
         return {"mode": "off", "file": "", "from_env": False}
+
+
+def ext_file() -> Path:
+    return config.DATA_DIR / "youtube-cookies.txt"
+
+
+def _login_lines(text: str):
+    """The cookie lines of a Netscape cookies file that belong to YouTube/Google, and whether one of them is a sign-in."""
+    keep, login = [], False
+    for line in text.splitlines():
+        raw = line.rstrip("\r")
+        bare = raw[len("#HttpOnly_"):] if raw.startswith("#HttpOnly_") else raw
+        cols = bare.split("\t")
+        if len(cols) != 7 or bare.startswith("#"):
+            continue
+        dom = cols[0].lower()
+        if not any(dom == d or dom.endswith(d) or "." + dom == d for d in EXT_DOMAINS):
+            continue
+        if not cols[5] or "\x00" in raw:
+            continue
+        keep.append(raw)
+        login = login or (cols[5] in LOGIN_COOKIES and bool(cols[6].strip()))
+    return keep, login
+
+
+def receive_from_extension(text: str):
+    """The extension's YouTube sign-in. Kept only if the owner allowed YouTube access here too (a second yes), only the
+    YouTube/Google lines, only if it really holds a sign-in. Returns (ok, message). Never logs a value."""
+    if not configured():
+        return False, "Turn on YouTube access in ViralCut (Settings, YouTube access) first."
+    text = str(text or "")
+    if len(text.encode("utf-8", "ignore")) > EXT_MAX:
+        return False, "That is more cookies than a normal sign-in."
+    keep, login = _login_lines(text)
+    if not login:
+        applog.log("youtube.cookies.received", "warning", count=len(keep), login=False)
+        return False, "No YouTube sign-in was in it. Sign in to YouTube in this browser and try again."
+    f = ext_file()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text("# Netscape HTTP Cookie File\n" + "\n".join(keep) + "\n", encoding="utf-8")
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass
+    os.replace(tmp, f)
+    applog.log("youtube.cookies.received", count=len(keep), login=True)
+    return True, "Sign-in received. ViralCut will use it only if YouTube asks."
+
+
+def forget_extension():
+    ext_file().unlink(missing_ok=True)
+    with _lock:
+        if _state["how"] == "extension":
+            _state.update(on=False, how="", note="")
+    applog.log("youtube.cookies.forgotten")
+
+
+def ext_status() -> dict:
+    """Whether the extension's sign-in is here and how old it is (minutes)."""
+    try:
+        f = ext_file()
+        keep, login = _login_lines(f.read_text(encoding="utf-8"))
+        return {"has": bool(login), "age_min": int((time.time() - f.stat().st_mtime) // 60) if login else None}
+    except OSError:
+        return {"has": False, "age_min": None}
 
 
 def save(mode: str, file: str = ""):
@@ -93,8 +164,16 @@ def activate() -> bool:
             _state.update(on=ok, how="file" if ok else "", note="" if ok else "the cookies file was not found")
             applog.log("youtube.cookies", "info" if ok else "warning", how="file", ok=ok)
             return ok
-        names = AUTO_ORDER if s["mode"] == "auto" else (s["mode"],)
+        names = (("extension",) + AUTO_ORDER) if s["mode"] == "auto" else (s["mode"],)
         for n in names:
+            if n == "extension":
+                ok, why = (True, "") if ext_status()["has"] else (False, "the extension has not sent a sign-in")
+                _state["tried"][n] = "ok" if ok else why
+                applog.log("youtube.cookies", "info" if ok else "warning", how=n, ok=ok, why=why)
+                if ok:
+                    _state.update(on=True, how=n, note="")
+                    return True
+                continue
             ok, why = _check_browser(n)
             _state["tried"][n] = "ok" if ok else why
             applog.log("youtube.cookies", "info" if ok else "warning", how=n, ok=ok, why=why)
@@ -111,6 +190,8 @@ def opts() -> dict:
         if not _state["on"]:
             return {}
         how = _state["how"]
+    if how == "extension":
+        return {"cookiefile": str(ext_file())}
     if how == "file":
         f = settings()["file"]
         return {"cookiefile": f} if f else {}
@@ -121,4 +202,4 @@ def state() -> dict:
     s = settings()
     with _lock:
         return {"mode": s["mode"], "file": s["file"], "from_env": s["from_env"], "in_use": _state["on"], "using": _state["how"],
-                "note": _state["note"], "tried": dict(_state["tried"])}
+                "note": _state["note"], "tried": dict(_state["tried"]), "extension": ext_status()}

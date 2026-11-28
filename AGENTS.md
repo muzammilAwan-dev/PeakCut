@@ -27,6 +27,7 @@ A short map for contributors and AI coding assistants.
 | `tools/claude_pack.py`, `tools/sandbox.json` | Packs files into zips under 30 MB and joins them again (for working with an offline assistant) |
 | `studio/applog.py` | The log file (`data/logs/viralcut.log`): `applog.log(event, key=value...)`. Blanks keys. Never log prompts or video text |
 | `studio/ytaccess.py` | Opt-in browser sign-in for YouTube's bot check (`data/youtube.json`). Used only after a refusal; `media._retry_with_sign_in` retries once |
+| `extension/sync.js`, `extension/background.js` | Send the YouTube sign-in from the browser to `/api/ext/cookies` (only when the popup box is ticked); stored by `ytaccess.receive_from_extension` |
 | `studio/trace.py` | Per-video paper trail in `trace/`: transcript and every AI prompt with its reply (default on without sign-in) |
 | `studio/llmcache.py` | Remembers AI answers (by prompt) so asking again costs nothing |
 | `studio/vault.py` | Seals saved keys with Windows DPAPI (falls back to plain text, never loses a key) |

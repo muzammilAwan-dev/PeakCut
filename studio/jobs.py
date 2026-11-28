@@ -717,8 +717,10 @@ def _run_job(job):
     exact = {}      # clip id -> (from, to, words): our own model's words for just that clip
 
     def make(clip, words_now):
+        tm, parts = applog.Timer(), {}
         if src["type"] == "url" and (pieces or not whole_video()):
             _fetch_piece(job, clip, audio)
+        parts["wait_for_video_ms"] = tm.ms()
         if clip["status"] != "error" and yt and yt[1].lower().startswith("en"):
             # The clip was found with YouTube's transcript. What is shown on screen comes from our own model,
             # run on just this clip: full punctuation, nothing blanked out, timings to the word.
@@ -730,11 +732,15 @@ def _run_job(job):
             if len(tw) >= 3:
                 exact[clip["id"]] = (a0 / 16000, b0 / 16000, tw)
                 words_now = tw
+            parts["own_words_ms"] = tm.ms() - parts["wait_for_video_ms"]
+        before = tm.ms()
         if clip["status"] != "error":
             render_one(job, clip, words_now)
+        applog.log("clip.made", job=str(job.get("id", ""))[:12], clip=clip.get("id"), status=clip.get("status"), seconds=round(clip["end"] - clip["start"]),
+                   render_ms=tm.ms() - before, total_ms=tm.ms(), **parts)
 
     cpus = os.cpu_count() or 4
-    renders = ThreadPoolExecutor(2 if cpus < 8 else min(6, cpus // 6))  # more clips made at once on a bigger machine
+    renders = ThreadPoolExecutor(max(2, min(6, cpus // 4)))  # more clips made at once on a bigger machine (8 cores: 2)
     futures = []
     step = BLOCK * 16000 if span > PROGRESSIVE_FROM else hi - lo
     blocks = [(x, min(hi, x + step)) for x in range(lo, hi, step)] or [(lo, hi)]

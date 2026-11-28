@@ -1,10 +1,38 @@
 {
   "manifest_version": 3,
   "name": "Clip this",
-  "version": "0.1.0",
-  "description": "Adds the video you are watching to your own ViralCut on this computer.",
-  "action": { "default_popup": "popup.html", "default_title": "Clip this", "default_icon": { "16": "icons/16.png", "48": "icons/48.png", "128": "icons/128.png" } },
-  "icons": { "16": "icons/16.png", "48": "icons/48.png", "128": "icons/128.png" },
-  "permissions": ["activeTab", "storage"],
-  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"]
+  "version": "0.2.0",
+  "description": "Adds the video you are watching to your own ViralCut on this computer. Can also share your YouTube sign-in with it, if you allow.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Clip this",
+    "default_icon": {
+      "16": "icons/16.png",
+      "48": "icons/48.png",
+      "128": "icons/128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "permissions": [
+    "activeTab",
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "optional_permissions": [
+    "cookies"
+  ],
+  "optional_host_permissions": [
+    "https://*.youtube.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
 }

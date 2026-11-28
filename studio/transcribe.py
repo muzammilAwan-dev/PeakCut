@@ -10,7 +10,7 @@ import time
 
 import numpy as np
 
-from . import config
+from . import applog, config
 
 _lock = threading.Lock()
 
@@ -52,6 +52,13 @@ def _model_files(d) -> dict:
 def _new():
     import sherpa_onnx
     d = config.ASR_MODEL_DIR
+    t = applog.Timer()
+    rec = _make_recognizer(sherpa_onnx, d)
+    applog.log("asr.model_loaded", ms=t.ms(), provider=PROVIDER, threads=THREADS, copies=COPIES)
+    return rec
+
+
+def _make_recognizer(sherpa_onnx, d):
     return sherpa_onnx.OfflineRecognizer.from_transducer(
         **_model_files(d),
         tokens=str(d / "tokens.txt"),
@@ -210,6 +217,9 @@ def transcribe(audio: np.ndarray, on_progress=None) -> list:
     size = max(1, REMOTE_BATCH if remote else BATCH)
     groups = [todo[i:i + size] for i in range(0, len(todo), size)]
     done = [0]
+    clock = applog.Timer()
+    applog.log("asr.start", audio_s=round(len(audio) / 16000), speech_pieces=len(todo), groups=len(groups), where="remote card" if remote else "this computer",
+               copies=COPIES, threads=THREADS)
 
     def decode(group):
         global _remote_down_until
@@ -265,4 +275,6 @@ def transcribe(audio: np.ndarray, on_progress=None) -> list:
     for i, w in enumerate(words):
         nxt = words[i + 1]["s"] if i + 1 < len(words) else w["e"] + 0.4
         w["e"] = round(max(w["s"] + 0.08, min(nxt, max(w["e"], w["s"] + 0.6))), 2)
+    secs = max(0.001, clock.ms() / 1000)
+    applog.log("asr.done", audio_s=round(len(audio) / 16000), words=len(words), ms=clock.ms(), faster_than_realtime=round(len(audio) / 16000 / secs, 1))
     return words

@@ -11,14 +11,56 @@
       "key_env": "GROQ_API_KEY",
       "signup_url": "https://console.groq.com/keys",
       "enabled_default": true,
-      "requires": {"card": "unknown", "phone": "unknown"},
-      "privacy": {"trains_on_data": "no", "source_url": "https://www.developersdigest.tech/models/free-api", "verified_on": "2026-10-18"},
-      "tos": {"note": "Limits are per organisation, not per key. One account only.", "source_url": "https://console.groq.com/docs/rate-limits.md"},
+      "requires": {
+        "card": "unknown",
+        "phone": "unknown"
+      },
+      "privacy": {
+        "trains_on_data": "no",
+        "source_url": "https://www.developersdigest.tech/models/free-api",
+        "verified_on": "2026-10-18"
+      },
+      "tos": {
+        "note": "Limits are per organisation, not per key. One account only.",
+        "source_url": "https://console.groq.com/docs/rate-limits.md"
+      },
       "models": [
-        {"id": "openai/gpt-oss-120b", "ctx": 131072, "json_mode": "unknown", "tier": 1,
-         "limits": {"rpm": 30, "rpd": 1000, "tpm": 8000, "tpd": 200000, "reset": "utc", "source": "docs"}, "status": "active"},
-        {"id": "llama-3.3-70b-versatile", "ctx": 131072, "json_mode": "object", "tier": 2,
-         "limits": {"rpm": null, "rpd": null, "tpm": null, "tpd": null, "reset": "utc", "source": "unknown"}, "status": "active"}
+        {
+          "id": "openai/gpt-oss-120b",
+          "ctx": 131072,
+          "json_mode": "unknown",
+          "tier": 1,
+          "limits": {
+            "rpm": 30,
+            "rpd": 1000,
+            "tpm": 8000,
+            "tpd": 200000,
+            "reset": "utc",
+            "source": "docs"
+          },
+          "status": "active"
+        },
+        {
+          "id": "llama-3.3-70b-versatile",
+          "ctx": 131072,
+          "json_mode": "object",
+          "tier": 2,
+          "limits": {
+            "rpm": null,
+            "rpd": null,
+            "tpm": null,
+            "tpd": null,
+            "reset": "utc",
+            "source": "unknown"
+          },
+          "status": "active"
+        }
+      ],
+      "recommended": [
+        "openai/gpt-oss-120b",
+        "llama-3.3-70b-versatile",
+        "openai/gpt-oss-20b",
+        "llama-3.1-8b-instant"
       ]
     },
     {
@@ -27,17 +69,50 @@
       "adapter": "openai",
       "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1",
       "key_env": "CLOUDFLARE_API_TOKEN",
-      "needs": ["account_id"],
+      "needs": [
+        "account_id"
+      ],
       "account_id_env": "CLOUDFLARE_ACCOUNT_ID",
       "signup_url": "https://dash.cloudflare.com/profile/api-tokens",
       "enabled_default": true,
-      "requires": {"card": "unknown", "phone": "unknown"},
-      "privacy": {"trains_on_data": "no", "source_url": "https://www.developersdigest.tech/models/free-api/cloudflare", "verified_on": "2026-10-18"},
-      "tos": {"note": "The free allowance is 10,000 Neurons a day shared by all models. The terms for the free allowance are ambiguous.", "source_url": "https://developers.cloudflare.com/workers-ai/platform/pricing/"},
-      "unverified": ["base_url (OpenAI-compatible path)", "model id", "json_mode", "tokens per Neuron"],
+      "requires": {
+        "card": "unknown",
+        "phone": "unknown"
+      },
+      "privacy": {
+        "trains_on_data": "no",
+        "source_url": "https://www.developersdigest.tech/models/free-api/cloudflare",
+        "verified_on": "2026-10-18"
+      },
+      "tos": {
+        "note": "The free allowance is 10,000 Neurons a day shared by all models. The terms for the free allowance are ambiguous.",
+        "source_url": "https://developers.cloudflare.com/workers-ai/platform/pricing/"
+      },
+      "unverified": [
+        "base_url (OpenAI-compatible path)",
+        "model id",
+        "json_mode",
+        "tokens per Neuron"
+      ],
       "models": [
-        {"id": "@cf/meta/llama-3.3-70b-instruct-fp8-fast", "ctx": 24000, "json_mode": "unknown", "tier": 2,
-         "limits": {"rpm": 300, "rpd": null, "tpm": null, "tpd": null, "reset": "utc", "source": "docs"}, "status": "active"}
+        {
+          "id": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+          "ctx": 24000,
+          "json_mode": "unknown",
+          "tier": 2,
+          "limits": {
+            "rpm": 300,
+            "rpd": null,
+            "tpm": null,
+            "tpd": null,
+            "reset": "utc",
+            "source": "docs"
+          },
+          "status": "active"
+        }
+      ],
+      "recommended": [
+        "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
       ]
     },
     {
@@ -49,9 +124,19 @@
       "local": true,
       "signup_url": "https://ollama.com",
       "enabled_default": true,
-      "requires": {"card": "no", "phone": "no"},
-      "privacy": {"trains_on_data": "no", "source_url": "https://docs.ollama.com/capabilities/structured-outputs", "verified_on": "2026-11-15"},
-      "tos": {"note": "Runs on this computer: nothing leaves it. Not used until you name a model you have installed (data/pool.json, local_models). Off on 8 GB computers by default: the model needs 3 to 5 GB.", "source_url": "https://docs.ollama.com/capabilities/structured-outputs"},
+      "requires": {
+        "card": "no",
+        "phone": "no"
+      },
+      "privacy": {
+        "trains_on_data": "no",
+        "source_url": "https://docs.ollama.com/capabilities/structured-outputs",
+        "verified_on": "2026-11-15"
+      },
+      "tos": {
+        "note": "Runs on this computer: nothing leaves it. Not used until you name a model you have installed (data/pool.json, local_models). Off on 8 GB computers by default: the model needs 3 to 5 GB.",
+        "source_url": "https://docs.ollama.com/capabilities/structured-outputs"
+      },
       "models": []
     },
     {
@@ -62,16 +147,70 @@
       "key_env": "GEMINI_API_KEY",
       "signup_url": "https://aistudio.google.com/apikey",
       "enabled_default": false,
-      "requires": {"card": "unknown", "phone": "unknown"},
-      "privacy": {"trains_on_data": "depends", "source_url": "https://www.developersdigest.tech/models/free-api", "verified_on": "2026-10-18"},
-      "tos": {"note": "Free use may be used for training outside the EEA, Switzerland and the UK. Limits are per project and are shown only in AI Studio.", "source_url": "https://ai.google.dev/gemini-api/docs/rate-limits"},
+      "requires": {
+        "card": "unknown",
+        "phone": "unknown"
+      },
+      "privacy": {
+        "trains_on_data": "depends",
+        "source_url": "https://www.developersdigest.tech/models/free-api",
+        "verified_on": "2026-10-18"
+      },
+      "tos": {
+        "note": "Free use may be used for training outside the EEA, Switzerland and the UK. Limits are per project and are shown only in AI Studio.",
+        "source_url": "https://ai.google.dev/gemini-api/docs/rate-limits"
+      },
       "models": [
-        {"id": "gemini-3.5-flash-lite", "ctx": 1048576, "json_mode": "schema", "tier": 1,
-         "limits": {"rpm": null, "rpd": null, "tpm": null, "tpd": null, "reset": "pacific", "source": "unknown"}, "status": "active"},
-        {"id": "gemini-3.8-flash", "ctx": 1048576, "json_mode": "schema", "tier": 1,
-         "limits": {"rpm": null, "rpd": null, "tpm": null, "tpd": null, "reset": "pacific", "source": "unknown"}, "status": "active"},
-        {"id": "gemini-3.1-flash-lite", "ctx": 1048576, "json_mode": "schema", "tier": 2,
-         "limits": {"rpm": null, "rpd": null, "tpm": null, "tpd": null, "reset": "pacific", "source": "unknown"}, "status": "active"}
+        {
+          "id": "gemini-3.5-flash-lite",
+          "ctx": 1048576,
+          "json_mode": "schema",
+          "tier": 1,
+          "limits": {
+            "rpm": null,
+            "rpd": null,
+            "tpm": null,
+            "tpd": null,
+            "reset": "pacific",
+            "source": "unknown"
+          },
+          "status": "active"
+        },
+        {
+          "id": "gemini-3.8-flash",
+          "ctx": 1048576,
+          "json_mode": "schema",
+          "tier": 1,
+          "limits": {
+            "rpm": null,
+            "rpd": null,
+            "tpm": null,
+            "tpd": null,
+            "reset": "pacific",
+            "source": "unknown"
+          },
+          "status": "active"
+        },
+        {
+          "id": "gemini-3.1-flash-lite",
+          "ctx": 1048576,
+          "json_mode": "schema",
+          "tier": 2,
+          "limits": {
+            "rpm": null,
+            "rpd": null,
+            "tpm": null,
+            "tpd": null,
+            "reset": "pacific",
+            "source": "unknown"
+          },
+          "status": "active"
+        }
+      ],
+      "recommended": [
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-flash-lite",
+        "gemini-3.8-flash"
       ]
     }
   ]

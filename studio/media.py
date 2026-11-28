@@ -30,6 +30,28 @@ class YouTubeBlocked(RuntimeError):
     pass
 
 
+# Public videos for the "does YouTube answer us?" check. Any one of them can be removed or hidden in a country, which is not a
+# bot check, so the next is tried; only a refusal to talk to us at all counts as a failure.
+TEST_VIDEOS = ("BaW_jenozKc", "dQw4w9WgXcQ", "jNQXAC9IWRw")
+_GONE = re.compile(r"unavailable|private video|has been removed|not available in your country|blocked it", re.I)
+
+
+def reach_check():
+    """(True, title) when YouTube answers about a public video; (False, why) otherwise. Raises YouTubeBlocked on the bot check."""
+    last = ""
+    for vid in TEST_VIDEOS:
+        try:
+            i = info("https://www.youtube.com/watch?v=" + vid)
+            return True, i.get("title") or "a public video"
+        except YouTubeBlocked:
+            raise
+        except Exception as e:  # noqa: BLE001
+            last = str(e)
+            if not _GONE.search(last):
+                break
+    return False, last
+
+
 def is_youtube(url: str) -> bool:
     from urllib.parse import urlparse
     host = (urlparse((url or "").strip()).hostname or "").lower()

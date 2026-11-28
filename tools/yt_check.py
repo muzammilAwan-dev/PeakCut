@@ -14,8 +14,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from studio import applog  # noqa: E402
+from studio.media import TEST_VIDEOS  # noqa: E402
 
-URL = sys.argv[1] if len(sys.argv) > 1 else "https://www.youtube.com/watch?v=jNQXAC9IWRw"
+URL = sys.argv[1] if len(sys.argv) > 1 else ""
 out = []
 
 
@@ -40,16 +41,27 @@ def ydl(extra):
     return yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "noplaylist": True, "socket_timeout": 20, **extra})
 
 
+GONE = ("unavailable", "private video", "has been removed", "not available in your country")
+
+
 def try_info(label, extra):
+    """Reads the video (or, with no link given, the first of a few public videos that this country can see)."""
+    global URL
     t = time.time()
-    try:
-        with ydl(extra) as y:
-            i = y.extract_info(URL, download=False)
-        say(f"{label:<10} OK    {time.time() - t:4.1f}s  {str(i.get('title'))[:50]}")
-        return i
-    except Exception as e:  # noqa: BLE001
-        say(f"{label:<10} FAIL  {time.time() - t:4.1f}s  {short(e)}")
-        return None
+    last = None
+    for link in ([URL] if URL else ["https://www.youtube.com/watch?v=" + v for v in TEST_VIDEOS]):
+        try:
+            with ydl(extra) as y:
+                i = y.extract_info(link, download=False)
+            URL = link
+            say(f"{label:<10} OK    {time.time() - t:4.1f}s  {str(i.get('title'))[:50]}")
+            return i
+        except Exception as e:  # noqa: BLE001
+            last = e
+            if not any(g in str(e).lower() for g in GONE):
+                break
+    say(f"{label:<10} FAIL  {time.time() - t:4.1f}s  {short(last)}")
+    return None
 
 
 def captions(info, extra):
@@ -85,7 +97,7 @@ def captions(info, extra):
                 time.sleep(5)
 
 
-say(f"ViralCut YouTube check   {time.strftime('%Y-%m-%d %H:%M')}   video: {URL}")
+say(f"ViralCut YouTube check   {time.strftime('%Y-%m-%d %H:%M')}   video: {URL or '(a public test video)'}")
 say(f"yt-dlp {version('yt-dlp')}   bgutil plugin: {version('bgutil-ytdlp-pot-provider')}   "
     f"deno: {shutil.which('deno') or 'not on PATH'}   node: {shutil.which('node') or 'not on PATH'}")
 say()

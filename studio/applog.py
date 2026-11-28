@@ -21,6 +21,7 @@ from . import config
 _LOG = logging.getLogger("viralcut")
 _lock = threading.Lock()
 _ready = False
+_COLOUR = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\[[0-9;]{1,8}m")
 _secrets = set()                    # exact key values to blank out, as soon as the app has seen them
 MAX_VALUE = 400
 
@@ -49,7 +50,7 @@ def remember_secret(value):
 
 
 def clean(value, limit=MAX_VALUE) -> str:
-    s = str(value).replace("\r", " ").replace("\n", " ")
+    s = _COLOUR.sub("", str(value)).replace("\r", " ").replace("\n", " ")
     for v in list(_secrets):
         s = s.replace(v, "<key>")
     s = _SHAPES.sub("<hidden>", s)
@@ -93,6 +94,20 @@ def log(event, _level="info", **fields):
         getattr(_LOG, _level if _level in ("debug", "info", "warning", "error") else "info")(" ".join(parts))
     except Exception:  # noqa: BLE001 - logging must never break the app
         pass
+
+
+def log_list(event, items, _level="info", per_line=300, **fields):
+    """A long list of names (the models a service offers) over a few lines, so none is cut off: `event part=1/3 n=40 items=a,b,c`."""
+    items = [str(i) for i in items]
+    lines, cur = [], ""
+    for i in items:
+        if cur and len(cur) + len(i) + 1 > per_line:
+            lines.append(cur)
+            cur = ""
+        cur = f"{cur},{i}" if cur else i
+    lines.append(cur)
+    for n, chunk in enumerate(lines, 1):
+        log(event, _level, part=f"{n}/{len(lines)}", n=len(items), items=chunk or "none", **fields)
 
 
 def error(event, exc=None, **fields):

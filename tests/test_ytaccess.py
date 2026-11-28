@@ -99,5 +99,70 @@ check("and a refusal", (t["ok"], "not a bot" in t["message"]), (False, True))
 log = (DATA / "logs" / "viralcut.log").read_text(encoding="utf-8") if (DATA / "logs" / "viralcut.log").exists() else ""
 check("the choices and the test are in the activity log", ("youtube.access" in log, "youtube.test" in log), (True, True))
 
+
+# ---- the browser extension's sign-in (the way that works for Chrome and Edge)
+from studio import exttoken, safe
+T = "\t"
+good = "\n".join([
+    "# Netscape HTTP Cookie File",
+    f".youtube.com{T}TRUE{T}/{T}TRUE{T}2000000000{T}SAPISID{T}abcdef",
+    f"#HttpOnly_.youtube.com{T}TRUE{T}/{T}TRUE{T}2000000000{T}__Secure-1PSID{T}xyz",
+    f".google.com{T}TRUE{T}/{T}TRUE{T}2000000000{T}NID{T}n",
+    f".bank.example{T}TRUE{T}/{T}TRUE{T}2000000000{T}secret{T}never", ""])
+ytaccess.save("off")
+check("the extension's sign-in is refused while YouTube access is off", ytaccess.receive_from_extension(good)[0], False)
+ytaccess.save("auto")
+ok, msg = ytaccess.receive_from_extension(good)
+saved = ext = ytaccess.ext_file().read_text(encoding="utf-8")
+check("accepted once allowed; only YouTube and Google lines are kept", (ok, "bank.example" not in saved, "SAPISID" in saved, "HttpOnly_.youtube.com" in saved), (True, True, True, True))
+check("it is known as received", (ytaccess.ext_status()["has"], ytaccess.ext_status()["age_min"]), (True, 0))
+check("no sign-in inside: refused and nothing replaced", (ytaccess.receive_from_extension(f".youtube.com{T}TRUE{T}/{T}TRUE{T}2000000000{T}PREF{T}x\n")[0], ytaccess.ext_file().read_text(encoding="utf-8")), (False, saved))
+check("far too much: refused", ytaccess.receive_from_extension("x" * 300_000)[0], False)
+looked.clear(); ytaccess.save("auto"); ytaccess._check_browser = fake_check({"firefox"})
+check("automatic tries the extension's sign-in before any browser", (ytaccess.activate(), ytaccess.state()["using"], looked, ytaccess.opts()), (True, "extension", [], {"cookiefile": str(ytaccess.ext_file())}))
+ytaccess.save("extension"); looked.clear()
+check("the 'extension only' choice never opens a browser", (ytaccess.activate(), looked), (True, []))
+ytaccess.forget_extension()
+ytaccess.save("extension")
+check("after Forget it is gone and activation says so", (ytaccess.ext_file().exists(), ytaccess.activate(), "extension" in ytaccess.state()["note"]), (False, False, True))
+ytaccess.save("auto"); ytaccess.receive_from_extension(good)
+
+# routes: only with the pairing key, and from an extension origin
+EX = {"Origin": "chrome-extension://abcdefghijklmnop", "X-Token": "wrong"}
+r = c.post("/api/ext/cookies", json={"cookies": good}, headers=EX)
+check("a wrong key is refused", r.status_code, 401)
+tok = c.get("/api/ext/token").json()["token"]
+r = c.post("/api/ext/cookies", json={"cookies": good}, headers={**EX, "X-Token": tok})
+check("the right key from an extension is accepted", (r.status_code, r.json().get("ok")), (200, True))
+check("a web page of another site is still not (no extension origin)", c.post("/api/ext/cookies", json={"cookies": good}, headers={"Origin": "https://evil.example", "X-Token": tok}).status_code, 403)
+ytaccess.save("off")
+r = c.post("/api/ext/cookies", json={"cookies": good}, headers={**EX, "X-Token": tok})
+check("with YouTube access off the extension is told to turn it on", (r.status_code, "Settings" in r.json()["detail"]), (409, True))
+ytaccess.save("auto")
+check("the page can see it and forget it", (c.get("/api/youtube").json()["extension"]["has"], c.delete("/api/youtube/cookies", headers=H).json()["extension"]["has"]), (True, False))
+log = (DATA / "logs" / "viralcut.log").read_text(encoding="utf-8")
+check("the log says a sign-in arrived but never what it was", ("youtube.cookies.received" in log, "abcdef" not in log, "__Secure-1PSID" not in log), (True, True, True))
+
+# ---- the reachability check and plain error text
+check("colour codes are removed from yt-dlp errors", safe.friendly("\x1b[0;31mERROR:\x1b[0m [youtube] x: This video is unavailable"), "ERROR: [youtube] x: This video is unavailable")
+check("and the form where the escape was lost", safe.friendly("[0;31mERROR:[0m boom"), "ERROR: boom")
+seen = []
+def gone_then_ok(url):
+    seen.append(url[-11:])
+    if len(seen) < 2: raise RuntimeError("ERROR: [youtube] x: This video is unavailable")
+    return {"title": "Second one"}
+media.info = gone_then_ok
+check("an unavailable test video moves on to the next one", (media.reach_check(), seen), ((True, "Second one"), list(media.TEST_VIDEOS[:2])))
+def always_gone(url): raise RuntimeError("Video unavailable")
+media.info = always_gone
+check("all gone: a plain failure, not a bot check", media.reach_check()[0], False)
+def timeout(url): raise RuntimeError("timed out")
+seen.clear(); media.info = timeout
+check("another kind of failure stops at once", (media.reach_check()[0]), False)
+media.info = blocked
+try: media.reach_check(); r = "answered"
+except media.YouTubeBlocked: r = "blocked"
+check("a bot check is raised, not swallowed", r, "blocked")
+
 print("ALL PASSED" if not fails else f"{len(fails)} failed: {fails}")
 sys.exit(1 if fails else 0)

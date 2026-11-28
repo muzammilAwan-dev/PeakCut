@@ -12,3 +12,6 @@ button.plain { background: transparent; border: 1px solid currentColor; margin-t
 details { margin-top: 10px; font-size: 12px; }
 label { display: block; margin-top: 8px; }
 input { width: 100%; box-sizing: border-box; padding: 6px; margin-top: 3px; }
+.chk { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; font-size: 13px; }
+.chk input { margin-top: 2px; }
+.note { font-size: 12px; opacity: .7; margin: 4px 0 10px; }

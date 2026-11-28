@@ -1772,6 +1772,7 @@ function jobHtml(j) {
   return `<div class="job-head"><div class="jt"><span class="jthumb">${pic}${j.duration ? `<span class="du">${fmt(j.duration)}</span>` : ""}</span><div style="min-width:0"><h3>${esc(j.title || j.source.name)}</h3><p class="sub">${meta}</p></div></div>
       <div class="row" style="flex-wrap:nowrap;gap:4px">${busy && j.kind !== "live" ? `<button class="btn sm" data-act="stopjob" data-j="${j.id}" title="Stop this video">Stop</button>` : busy ? "" : `
         ${j.clips.some(c => c.draft && c.status === "done") ? `<button class="btn sm" data-act="finalall" data-j="${j.id}" title="Fetch the video in ${j.options?.quality || 720}p and make every draft clip again">${ic("up")}Make all ${j.options?.quality || 720}p</button>` : ""}
+        ${j.kind !== "live" && j.status !== "queued" ? `<a class="btn sm ghost" href="/api/jobs/${j.id}/trace" download title="A zip with the transcript (with times) and every question sent to the AI with its reply, to check by hand">Transcript and AI log</a>` : ""}
         ${j.source?.type === "url" && j.kind !== "live" ? `<button class="btn sm ghost" data-act="again" data-j="${j.id}" title="Put this link back in the box with settings to change">Make again…</button>` : ""}
         ${j.clips.some(c => c.status === "done") ? `<button class="btn sm icon ghost" data-act="dlall" data-j="${j.id}" title="Download all clips of this video" aria-label="Download all clips of this video">${ic("down")}</button>` : ""}
         <button class="btn sm icon ghost" data-act="deljob" data-j="${j.id}" title="Delete" aria-label="Delete this video and its clips">${ic("trash")}</button>
@@ -2061,7 +2062,7 @@ function poolHtml(P) {
     const fm = (x.found && x.found.models) || [];
     const okRows = fm.filter(m => m.status === "working"), firstGood = (okRows.length ? okRows : fm.filter(m => m.status === "busy")).slice(0, 3).map(m => m.id);
     const found = fm.length ? `<div class="found"><p class="sub">Checked ${x.found.at ? new Date(x.found.at * 1000).toLocaleString() : ""}: ${x.found.listed} text models listed, the best ${fm.length} tried. Only the ones that answered are used.</p>
-        <ul class="found-list">${fm.map(m => `<li><span class="pill ${(FS[m.status] || ["warn"])[0]}">${esc((FS[m.status] || ["", m.status])[1])}</span> <code>${esc(m.id)}</code>${firstGood.includes(m.id) ? ` <span class="pill ok">${ic("check")}Preferred</span>` : ""}
+        <ul class="found-list">${fm.map(m => `<li><span class="pill ${(FS[m.status] || ["warn"])[0]}">${esc((FS[m.status] || ["", m.status])[1])}</span> <code>${esc(m.id)}</code>${m.rec ? ` <span class="pill">Known good</span>` : ""}${firstGood.includes(m.id) ? ` <span class="pill ok">${ic("check")}Preferred</span>` : ""}
           <span class="sub">${m.code ? "status " + m.code : ""}${m.ms ? ", " + m.ms + " ms" : ""}${m.note ? ". " + esc(m.note) : ""}</span></li>`).join("")}</ul></div>` : "";
     return `<div class="pool-card"><div class="row"><b>${esc(x.label)}</b>${state}<span class="sub">${x.local ? "Stays on this computer" : x.trains_on_data === "no" ? "Says it does not train on your text" : "Training terms: " + esc(x.trains_on_data)}</span></div>
       ${x.reason && x.enabled && !x.usable ? `<p class="sub">${esc(x.reason)}</p>` : ""}${models}${found}<div class="ai-form">${key}${acct}${local}</div>
@@ -2120,12 +2121,14 @@ async function drawSettings() {
       body.innerHTML = `<section class="set-sec"><h2>YouTube access</h2>
         <p class="help">Sometimes YouTube answers <b>"Sign in to confirm you are not a bot"</b> and stops downloads. ViralCut always tries as a visitor first. If YouTube refuses, it can find a browser on this computer that is signed in to YouTube, use that sign-in, and try again by itself. Nothing is sent anywhere else.</p>
         <div class="ytopts">${ro("off", "Off", "Only ever download as a visitor.")}
-          ${ro("auto", "Automatic (recommended)", "Only after YouTube refuses: look for a signed-in Firefox, Edge, Chrome or Brave.")}
+          ${ro("auto", "Automatic (recommended)", "Only after YouTube refuses: the browser extension's sign-in first, then a signed-in Firefox, Edge, Chrome or Brave.")}
+          ${ro("extension", "Browser extension only", "Best for Chrome, Edge and Brave: the extension sends the sign-in from inside the browser (see the Browser extension tab).")}
           ${ro("firefox", "Firefox only", "Works best. Chrome and Edge on Windows often lock their sign-in away from other programs.")}
           ${ro("file", "A cookies file", "Advanced: the full path of a cookies.txt you exported.")}</div>
         <label class="f" style="max-width:560px">Cookies file path<input id="yt_file" value="${esc(Y.file || "")}" placeholder="C:\\Users\\you\\cookies.txt" ${Y.from_env ? "disabled" : ""}></label>
         <p class="hint">Please use a spare Google account for this. Many automatic downloads from a personal account can make YouTube challenge it.${Y.from_env ? " This is set by the PEAKCUT_YT_COOKIES setting." : ""}</p>
-        <div class="row"><button class="btn primary" data-act="ytsave" ${Y.from_env ? "disabled" : ""}>Save</button><button class="btn" data-act="yttest">Test YouTube now</button></div>
+        <p class="sub">${Y.extension?.has ? "Sign-in from the browser extension: received " + (Y.extension.age_min < 1 ? "just now" : Y.extension.age_min + " min ago") + "." : "Sign-in from the browser extension: none received yet. Load the extension and tick the YouTube box in its popup."}</p>
+        <div class="row"><button class="btn primary" data-act="ytsave" ${Y.from_env ? "disabled" : ""}>Save</button><button class="btn" data-act="yttest">Test YouTube now</button>${Y.extension?.has ? `<button class="btn" data-act="ytforget">Forget the extension's sign-in</button>` : ""}</div>
         <p class="sub" id="yt_result">${Y.paused ? "YouTube links are paused for a few minutes after a refusal. Press Test to try again." : Y.in_use ? "A browser sign-in is in use (" + esc(Y.using) + ")." : ""}${Y.note ? " " + esc(Y.note) : ""}</p></section>`;
     }
     if (tab === "pool") {
@@ -2339,8 +2342,10 @@ document.addEventListener("click", async e => {
       b.disabled = true;
       try {
         const r = await send("/api/ai/models", {provider: $("#ai_provider").value, base_url: $("#ai_base").value, key: $("#ai_key").value});
-        $("#ai_models").innerHTML = r.models.map(m => `<option value="${esc(m)}">`).join("");
-        toast(r.models.length ? `${r.models.length} models found. Click the model box to pick one.` : "The service listed no models. Type the model yourself.", r.models.length ? "ok" : "");
+        const sg = r.suggested || [];
+        $("#ai_models").innerHTML = [...sg, ...r.models.filter(m => !sg.includes(m))].map(m => `<option value="${esc(m)}" label="${sg.includes(m) ? "★ suggested: " : ""}${esc(m)}">`).join("");
+        if (sg.length) $("#ai_model").value = $("#ai_model").value || sg[0];
+        toast(r.models.length ? `${r.models.length} models found.${sg.length ? " Suggested: " + sg.join(", ") + "." : ""} Click the model box to pick one.` : "The service listed no models. Type the model yourself.", r.models.length ? "ok" : "");
         if (r.models.length) $("#ai_model").focus();
       } finally { b.disabled = false; }
       return;
@@ -2392,6 +2397,7 @@ document.addEventListener("click", async e => {
       } finally { b.disabled = false; b.textContent = was; }
       return;
     }
+    if (a === "ytforget") { await api("/api/youtube/cookies", {method: "DELETE"}); toast("Forgotten."); return drawSettings(); }
     if (a === "logshow") { const r = await api("/api/log?lines=300"); $("#log_path").textContent = "File: " + r.path + " (detail level: " + r.level + ")"; const pre = $("#log_text"); pre.hidden = false; pre.textContent = r.text || "The log is empty."; pre.scrollTop = pre.scrollHeight; return; }
     if (a === "pooldiscover") {
       b.disabled = true; const was = b.textContent; b.textContent = "Testing…";

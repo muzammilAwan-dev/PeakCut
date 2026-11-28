@@ -1,4 +1,4 @@
-# memory.md (rev 17, 2026-11-28, current state only)
+# memory.md (rev 18, 2026-11-28, current state only)
 
 ## Project
 - Fork `muzammilAwan-dev/PeakCut` (company Amfaiz), branch `develop` only. Product name: **ViralCut** (repo name unchanged).
@@ -44,6 +44,9 @@
 - rev16: `media.youtube_words(url, covers)` tries manual captions then auto then own model; `transcript_from` = youtube-manual|youtube-auto|own. UNVERIFIED on real YouTube (json3 for manual tracks assumed).
 
 - rev17 (S11): `studio/ytaccess.py` + Settings tab "YouTube access" (`/api/youtube`, `/api/youtube/test`), `media._retry_with_sign_in` (visitor first; after a bot-check refusal and with consent, Firefox>Edge>Chrome>Brave cookies, retry once). `tools/yt_check.py` writes yt-check.txt. Captions logged (`youtube.captions.*`). bgutil PO-token plugin NOT built (GPL-3.0, needs OK + Windows test). UNVERIFIED on real YouTube.
+
+- rev17 REAL RESULTS (owner, 2026-11-28 log): Gemini free key works with gemini-3.5-flash-lite (200, 1-3 s). YouTube auto captions worked on a Hindi video (hi-orig, 12183 words, 1 s). Visitor downloads work (no bot check). yt_check: Edge cookies undecryptable (DPAPI), Brave locked, Firefox/Chrome absent. jNQXAC9IWRw is "unavailable" for him. A 47 min video with no captions: own ASR sat at minute 0 for 2.5 min (unexplained; rev18 logs asr.*). Clips come ~90 s apart (was 1 render worker on 8 cores).
+- rev18 (S12): extension 0.2.0 sends YouTube cookies (`/api/ext/cookies`, optional perms, popup box, 30 min alarm) -> `data/youtube-cookies.txt`, `ytaccess` mode `extension` (auto tries it first); `media.reach_check` (3 test videos); colour codes stripped; `catalog.recommended` + `rank_model(recommended)` + `ai.suggest_models` + `applog.log_list`; `GET /api/jobs/{id}/trace` zip + row button; `asr.*` and `clip.made` log lines; render workers max(2, cpus//4). Idea source: owner's yt-downloader-pro (chrome.cookies in extension). UNVERIFIED: extension in real Chrome, cookie rotation lifetime, whether YouTube accepts them.
 
 ## Next
 - Owner applies rev12, re-runs windows-baseline.bat, then continues `docs/RELEASE_TEST.md` from step 4.

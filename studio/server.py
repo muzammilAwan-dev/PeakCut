@@ -28,7 +28,7 @@ from . import (accounts, ai, alerts, applog, auth, ytaccess, config, creators, c
 
 app = FastAPI(title="ViralCut", docs_url=None, redoc_url=None, openapi_url=None)
 WEB = config.ROOT / "web"
-OPEN = ("/api/ext/clip", "/api/auth/", "/pub/", "/api/public", "/auth/google/", "/auth/verify", "/brand/", "/assets/", "/healthz", "/favicon.ico", "/robots.txt", "/sitemap.xml")
+OPEN = ("/api/ext/clip", "/api/ext/cookies", "/api/auth/", "/pub/", "/api/public", "/auth/google/", "/auth/verify", "/brand/", "/assets/", "/healthz", "/favicon.ico", "/robots.txt", "/sitemap.xml")
 PAGES = {"/": "landing.html", "/login": "auth.html", "/signup": "auth.html", "/reset": "reset.html",
          "/privacy": "legal.html", "/terms": "legal.html", "/acceptable-use": "legal.html"}
 VIDEO_TYPES = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".ts", ".flv"}
@@ -89,7 +89,7 @@ class Gate:
 
         if method not in ("GET", "HEAD", "OPTIONS"):
             origin = req.headers.get("origin")
-            from_extension = path == "/api/ext/clip" and (origin or "").startswith(("chrome-extension://", "moz-extension://"))
+            from_extension = path in ("/api/ext/clip", "/api/ext/cookies") and (origin or "").startswith(("chrome-extension://", "moz-extension://"))
             if origin and not from_extension and urlparse(origin).netloc != req.headers.get("host") and origin.rstrip("/") != config.PUBLIC_URL:
                 return await deny(403, "Cross-site requests are not allowed.")
             # Only the upload may be big. Everything else is a small form, and is cut off at 256 KB whatever its
@@ -975,6 +975,25 @@ def make_final(jid: str, body: dict = Body(default={})):
     return jobs.public(job)
 
 
+@app.get("/api/jobs/{jid}/trace")
+def job_trace(jid: str):
+    """The paper trail of one video as a zip: the transcript with times, and every question to the AI with its full prompt and reply.
+    For checking by hand whether the words were heard right and whether the AI was asked well."""
+    import io
+    import zipfile
+    _job_or_404(jid)
+    d = jobs.job_dir(jid) / "trace"
+    files = sorted(p for p in d.glob("*.txt") if p.is_file()) if d.is_dir() else []
+    if not files:
+        raise HTTPException(404, "There is no paper trail for this video. It is written while a video is made, and not at all on a shared site (PEAKCUT_TRACE=1 turns it on).")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for p in files[:400]:
+            z.write(p, p.name)
+    applog.log("trace.download", job=jid[:12], files=len(files))
+    return Response(buf.getvalue(), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="viralcut-trace-{jid[:16]}.zip"', "Cache-Control": "private, no-store"})
+
+
 @app.post("/api/jobs/{jid}/cancel")
 def cancel_job(jid: str):
     _job_or_404(jid)
@@ -1321,7 +1340,8 @@ def ai_models(request: Request, body: dict = Body(default={})):
     _admin(request)
     _throttle("aimodels:" + ctx.uid(), 30, 600)
     try:
-        return {"models": ai.list_models(body.get("provider"), body.get("base_url"), body.get("key"))}
+        models = ai.list_models(body.get("provider"), body.get("base_url"), body.get("key"))
+        return {"models": models, "suggested": ai.suggest_models(body.get("provider") or ai.current()["provider"], models)}
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:  # noqa: BLE001
@@ -1470,8 +1490,8 @@ def youtube_test(request: Request):
     _throttle("yttest:" + ctx.uid(), 6, 600)
     media._yt_refused_until = 0.0
     try:
-        i = media.info("https://www.youtube.com/watch?v=jNQXAC9IWRw")
-        ok, msg = True, f"YouTube answered ({i.get('title') or 'a public video'})."
+        ok, what = media.reach_check()
+        msg = f"YouTube answered ({what})." if ok else "The check failed: " + safe.friendly(what, 200)
     except media.YouTubeBlocked:
         ok, msg = False, "YouTube still asks to confirm this is not a bot. " + (ytaccess.state()["note"] or "")
     except Exception as e:  # noqa: BLE001
@@ -1524,6 +1544,26 @@ def ext_clip(request: Request, body: dict = Body(...)):
         job = create_from_link({"url": url})
         ctx.bump()
     return {"ok": True, "id": job["id"], "title": job.get("title") or "", "message": "Added. Open ViralCut to see it."}
+
+
+@app.post("/api/ext/cookies")
+def ext_cookies(request: Request, body: dict = Body(...)):
+    """The extension's YouTube sign-in (only the YouTube lines are kept, and only if YouTube access is on here too)."""
+    if not exttoken.owner_of(request.headers.get("x-token", "")):
+        _throttle("extbad:" + (request.client.host if request.client else "?"), 10, 600, "Too many wrong keys. Wait a few minutes.")
+        raise HTTPException(401, "The extension's key is wrong or was replaced. Copy it again from Settings.")
+    _throttle("extcookies", 120, 3600)
+    ok, msg = ytaccess.receive_from_extension(body.get("cookies", ""))
+    if not ok:
+        raise HTTPException(409, msg)
+    return {"ok": True, "message": msg}
+
+
+@app.delete("/api/youtube/cookies")
+def youtube_forget(request: Request):
+    _admin(request)
+    ytaccess.forget_extension()
+    return {"ok": True, **ytaccess.state()}
 
 
 # ================================================================ posting, accounts, settings

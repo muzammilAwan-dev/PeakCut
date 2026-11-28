@@ -1,0 +1,14 @@
+ViralCut YouTube check   2026-11-28 13:16   video: https://www.youtube.com/watch?v=jNQXAC9IWRw
+yt-dlp 2026.10.21   bgutil plugin: not installed   deno: E:\Github Projects\PeakCut\bin\deno.EXE   node: C:\Program Files\nodejs\node.EXE
+
+1. Can the video be read?
+visitor    FAIL   4.1s  [0;31mERROR:[0m [youtube] jNQXAC9IWRw: This video is unavailable
+firefox    FAIL   0.2s  [0;31mERROR:[0m could not find firefox cookies database in 'C:\\Users\\Malku\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles', 'C:\\Users\\Malku\\AppData\\Local...(+91)
+edge       FAIL   1.2s  [0;31mERROR:[0m [0;31mERROR:[0m Failed to decrypt with DPAPI. See  https://github.com/yt-dlp/yt-dlp/issues/10927  for more info
+chrome     FAIL   0.2s  [0;31mERROR:[0m could not find chrome cookies database in "C:\Users\Malku\AppData\Local\Google\Chrome\User Data"
+brave      FAIL   4.3s  [0;31mERROR:[0m [0;31mERROR:[0m Could not copy Chrome cookie database. See  https://github.com/yt-dlp/yt-dlp/issues/7271  for more info
+
+2. Captions
+nothing could read the video, so captions were not tried
+
+Meaning: 'visitor OK' = nothing more is needed on this network. 'visitor FAIL' and a browser OK = turn on Settings > YouTube access. Every line FAIL = YouTube refuses this network or account; send this file back.
